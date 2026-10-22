@@ -66,6 +66,13 @@ export async function initDb() {
       FOREIGN KEY (debt_id) REFERENCES debts(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS api_idempotency (
+      operation_id TEXT PRIMARY KEY,
+      status_code INTEGER NOT NULL,
+      response_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_debts_person ON debts(person_id);
     CREATE INDEX IF NOT EXISTS idx_payments_debt ON payments(debt_id);
   `);

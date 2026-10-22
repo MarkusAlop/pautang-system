@@ -1,8 +1,10 @@
 <script>
-  import { Wallet, Plus, Users, LayoutDashboard, FileSpreadsheet, Settings } from 'lucide-svelte';
+  import { Wallet, Plus, Users, LayoutDashboard, FileSpreadsheet, Settings, Download } from 'lucide-svelte';
   
   export let activeTab = 'dashboard';
   export let onOpenAddDebt = () => {};
+  export let canInstallApp = false;
+  export let onInstallApp = () => {};
   export let onTabChange = (tab) => {};
   export let overdueCount = 0;
 </script>
@@ -86,6 +88,18 @@
 
       <!-- Action Button -->
       <div class="flex items-center gap-3">
+        {#if canInstallApp}
+          <button
+            type="button"
+            on:click={onInstallApp}
+            class="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 text-blue-700 hover:bg-blue-50 rounded-lg text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            aria-label="Install PautangTrack app"
+            title="Install app"
+          >
+            <Download class="w-4 h-4" />
+            <span class="hidden sm:inline">Install</span>
+          </button>
+        {/if}
         <button
           on:click={onOpenAddDebt}
           class="flex items-center gap-1.5 px-2.5 sm:px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm shadow-emerald-600/30 transition-all hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2"

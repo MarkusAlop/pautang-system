@@ -1,6 +1,33 @@
 import { query, queryOne, run, saveDb } from './db.js';
 
 export function setupApiRoutes(router) {
+  const replayOperation = (req, res) => {
+    const operationId = req.get('X-Client-Operation-Id');
+    if (!operationId) return false;
+
+    const saved = queryOne(`SELECT status_code, response_json FROM api_idempotency WHERE operation_id = ?`, [operationId]);
+    if (!saved) return false;
+
+    res.status(saved.status_code).json(JSON.parse(saved.response_json));
+    return true;
+  };
+
+  const rememberOperation = (req, statusCode, responseBody) => {
+    const operationId = req.get('X-Client-Operation-Id');
+    if (!operationId) return;
+
+    run(`
+      INSERT OR IGNORE INTO api_idempotency (operation_id, status_code, response_json, created_at)
+      VALUES (?, ?, ?, ?)
+    `, [operationId, statusCode, JSON.stringify(responseBody), new Date().toISOString()]);
+  };
+
+  const getClientCreatedAt = (value) => {
+    if (typeof value !== 'string') return new Date().toISOString();
+    const timestamp = new Date(value);
+    return Number.isNaN(timestamp.getTime()) ? new Date().toISOString() : timestamp.toISOString();
+  };
+
   // Helper to calculate loan status and remaining balance
   const enrichLoan = (debt) => {
     const today = new Date().toISOString().split('T')[0];
@@ -196,6 +223,7 @@ export function setupApiRoutes(router) {
   // 4. POST /api/debts (Record new pautang)
   router.post('/api/debts', (req, res) => {
     try {
+      if (replayOperation(req, res)) return;
       const { 
         person_id, 
         person_name, 
@@ -206,7 +234,8 @@ export function setupApiRoutes(router) {
         reason, 
         date_incurred, 
         due_date, 
-        notes 
+        notes,
+        client_created_at
       } = req.body;
 
       if (!amount || isNaN(amount) || Number(amount) <= 0) {
@@ -214,10 +243,10 @@ export function setupApiRoutes(router) {
       }
 
       let targetPersonId = person_id;
+      const now = getClientCreatedAt(client_created_at);
 
       // Auto-create borrower if new
       if (!targetPersonId && person_name) {
-        const now = new Date().toISOString();
         const pResult = run(`
           INSERT INTO people (name, nickname, relationship, phone, created_at)
           VALUES (?, ?, ?, ?, ?)
@@ -235,7 +264,6 @@ export function setupApiRoutes(router) {
         return res.status(400).json({ error: 'Borrower is required' });
       }
 
-      const now = new Date().toISOString();
       const finalDateIncurred = date_incurred || now.split('T')[0];
       const loanReason = typeof reason === 'string' ? reason.trim() : '';
 
@@ -254,7 +282,9 @@ export function setupApiRoutes(router) {
       ]);
 
       const created = queryOne(`SELECT * FROM debts WHERE id = ?`, [result.lastInsertRowid]);
-      res.status(201).json(enrichLoan(created));
+      const responseBody = enrichLoan(created);
+      rememberOperation(req, 201, responseBody);
+      res.status(201).json(responseBody);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -342,7 +372,8 @@ export function setupApiRoutes(router) {
   // 8. POST /api/payments (Record payment / collection)
   router.post('/api/payments', (req, res) => {
     try {
-      const { debt_id, amount, payment_date, payment_method, reference_no, notes } = req.body;
+      if (replayOperation(req, res)) return;
+      const { debt_id, amount, payment_date, payment_method, reference_no, notes, client_created_at } = req.body;
       if (!debt_id) return res.status(400).json({ error: 'Loan ID is required' });
       if (!amount || isNaN(amount) || Number(amount) <= 0) {
         return res.status(400).json({ error: 'Valid payment amount is required' });
@@ -352,7 +383,8 @@ export function setupApiRoutes(router) {
       if (!debt) return res.status(404).json({ error: 'Loan record not found' });
 
       const now = new Date().toISOString();
-      const pDate = payment_date || now.split('T')[0];
+      const createdAt = getClientCreatedAt(client_created_at);
+      const pDate = payment_date || createdAt.split('T')[0];
 
       const pResult = run(`
         INSERT INTO payments (debt_id, amount, payment_date, payment_method, reference_no, notes, created_at)
@@ -364,7 +396,7 @@ export function setupApiRoutes(router) {
         payment_method || 'Cash',
         reference_no ? reference_no.trim() : null,
         notes ? notes.trim() : null,
-        now
+        createdAt
       ]);
 
       const totalPaidRow = queryOne(`SELECT SUM(amount) as total FROM payments WHERE debt_id = ?`, [Number(debt_id)]);
@@ -384,11 +416,13 @@ export function setupApiRoutes(router) {
         FROM debts d WHERE d.id = ?
       `, [Number(debt_id)]));
 
-      res.status(201).json({
+      const responseBody = {
         payment,
         debt: updatedDebt,
         is_settled: updatedDebt.balance <= 0
-      });
+      };
+      rememberOperation(req, 201, responseBody);
+      res.status(201).json(responseBody);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -548,12 +582,13 @@ export function setupApiRoutes(router) {
   // 12. POST /api/people (Add borrower)
   router.post('/api/people', (req, res) => {
     try {
-      const { name, nickname, relationship, phone, facebook, notes } = req.body;
+      if (replayOperation(req, res)) return;
+      const { name, nickname, relationship, phone, facebook, notes, client_created_at } = req.body;
       if (!name || !name.trim()) {
         return res.status(400).json({ error: 'Borrower name is required' });
       }
 
-      const now = new Date().toISOString();
+      const now = getClientCreatedAt(client_created_at);
       const result = run(`
         INSERT INTO people (name, nickname, relationship, phone, facebook, notes, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -568,6 +603,7 @@ export function setupApiRoutes(router) {
       ]);
 
       const created = queryOne(`SELECT * FROM people WHERE id = ?`, [result.lastInsertRowid]);
+      rememberOperation(req, 201, created);
       res.status(201).json(created);
     } catch (err) {
       res.status(500).json({ error: err.message });

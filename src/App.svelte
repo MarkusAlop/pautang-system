@@ -36,6 +36,11 @@
   let people = [];
   let toast = null;
   let loading = true;
+  let isOnline = typeof navigator === 'undefined' || navigator.onLine;
+  let pendingSyncCount = 0;
+  let syncingOfflineRecords = false;
+  let offlineSyncError = '';
+  let installPrompt = null;
 
   // Modals state
   let isAddDebtOpen = false;
@@ -69,8 +74,108 @@
     }
   }
 
-  onMount(async () => {
-    await refreshData();
+  async function loadOfflineData() {
+    loading = true;
+    try {
+      const snapshot = await api.getOfflineSnapshot();
+      stats = snapshot.stats;
+      debts = snapshot.debts;
+      people = snapshot.people;
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function handleInstallApp() {
+    if (!installPrompt) return;
+    const prompt = installPrompt;
+    installPrompt = null;
+    await prompt.prompt();
+    await prompt.userChoice;
+  }
+
+  async function syncOfflineRecords() {
+    if (!isOnline || syncingOfflineRecords) return;
+    syncingOfflineRecords = true;
+    offlineSyncError = '';
+    try {
+      const queuedBeforeSync = await api.getPendingOperationCount();
+      if (!queuedBeforeSync) {
+        await refreshData();
+        return;
+      }
+
+      const result = await api.syncOfflineChanges();
+      pendingSyncCount = result.pending;
+      if (result.error) {
+        offlineSyncError = result.error;
+        await loadOfflineData();
+        return;
+      }
+
+      if (result.pending > 0) {
+        await loadOfflineData();
+      } else if (result.synced > 0) {
+        await refreshData();
+        if (isPersonDetailOpen && activePerson) {
+          const personId = result.idMappings?.people?.[String(activePerson.id)] || activePerson.id;
+          activePerson = await api.getPerson(personId);
+        }
+        if (isDebtDetailOpen && activeDebt) {
+          const debtId = result.idMappings?.debts?.[String(activeDebt.id)] || activeDebt.id;
+          activeDebt = await api.getDebt(debtId);
+        }
+        showToast(`${result.synced} offline record${result.synced === 1 ? '' : 's'} synced.`);
+      }
+    } catch (error) {
+      offlineSyncError = error.message || 'Could not sync offline records.';
+    } finally {
+      syncingOfflineRecords = false;
+    }
+  }
+
+  onMount(() => {
+    const handleOnline = () => {
+      isOnline = true;
+      void syncOfflineRecords();
+    };
+    const handleOffline = () => {
+      isOnline = false;
+    };
+    const handleQueuedRecords = (event) => {
+      pendingSyncCount = event.detail?.count || 0;
+    };
+    const handleInstallPrompt = (event) => {
+      event.preventDefault();
+      installPrompt = event;
+    };
+    const handleAppInstalled = () => {
+      installPrompt = null;
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('pautang:offline-queue', handleQueuedRecords);
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    void (async () => {
+      isOnline = navigator.onLine;
+      pendingSyncCount = await api.getPendingOperationCount();
+      if (isOnline) {
+        await syncOfflineRecords();
+      } else {
+        await loadOfflineData();
+      }
+    })();
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('pautang:offline-queue', handleQueuedRecords);
+      window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
   });
 
   // Action handlers
@@ -215,6 +320,8 @@
   <!-- Navigation Header -->
   <Navbar 
     {activeTab}
+    canInstallApp={Boolean(installPrompt)}
+    onInstallApp={handleInstallApp}
     overdueCount={stats.overdue_count}
     onOpenAddDebt={handleOpenAddDebt}
     onTabChange={(tab) => {
@@ -224,6 +331,26 @@
       }
     }}
   />
+
+  {#if !isOnline || pendingSyncCount > 0}
+    <div class={`px-4 py-2 text-xs ${isOnline ? 'bg-blue-50 text-blue-900 border-b border-blue-200' : 'bg-amber-50 text-amber-900 border-b border-amber-200'}`} role="status" aria-live="polite">
+      <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+        <span>
+          {#if isOnline}
+            {syncingOfflineRecords ? 'Syncing offline records…' : `${pendingSyncCount} record${pendingSyncCount === 1 ? '' : 's'} waiting to sync.`}
+          {:else}
+            Offline mode. This device shows saved data; new borrowers, loans, and payments will sync when you reconnect.
+          {/if}
+          {#if offlineSyncError}<span class="block text-red-700 mt-1">{offlineSyncError}</span>{/if}
+        </span>
+        {#if isOnline && pendingSyncCount > 0 && !syncingOfflineRecords}
+          <button type="button" on:click={syncOfflineRecords} class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold">
+            Sync now
+          </button>
+        {/if}
+      </div>
+    </div>
+  {/if}
 
   <!-- Toast Notification -->
   {#if toast}
@@ -342,9 +469,12 @@
   <!-- Footer -->
   <footer class="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500 no-print">
     <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-      <div class="flex items-center gap-1">
-        <span class="font-bold text-slate-700">PautangTrack</span>
-        <span>• Money Lent & Debtors Management System</span>
+      <div class="flex flex-col items-center gap-0.5 sm:items-start">
+        <div class="flex items-center gap-1">
+          <span class="font-bold text-slate-700">PautangTrack</span>
+          <span>• Money Lent & Debtors Management System</span>
+        </div>
+        <span class="text-[10px] text-slate-400">Created by Markus Alop · 2026 Pautang Track</span>
       </div>
       <div class="text-[11px] text-slate-400">
         Saved to local SQLite database: <code class="font-mono bg-slate-100 px-1 py-0.5 rounded">data/utang.sqlite</code>
