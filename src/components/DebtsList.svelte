@@ -212,7 +212,7 @@
 
               <!-- Reason and Date -->
               <p class="text-xs text-slate-700 font-medium mt-1 truncate">
-                {debt.reason}
+                {debt.reason || 'Loan'}
               </p>
 
               <div class="flex flex-wrap items-center gap-3 text-[11px] text-slate-600 mt-1">

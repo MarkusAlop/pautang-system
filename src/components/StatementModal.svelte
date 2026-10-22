@@ -83,7 +83,7 @@
         <div class="space-y-2 text-xs">
           <div class="flex justify-between py-1.5 border-b border-slate-100">
             <span class="text-slate-600 font-medium">Loan Purpose / Description:</span>
-            <span class="font-bold text-slate-900">{debt.reason}</span>
+            <span class="font-bold text-slate-900">{debt.reason || 'Not specified'}</span>
           </div>
           <div class="flex justify-between py-1.5 border-b border-slate-100">
             <span class="text-slate-600 font-medium">Date Lent:</span>

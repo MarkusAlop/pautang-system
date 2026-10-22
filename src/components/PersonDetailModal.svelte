@@ -143,7 +143,7 @@
                     </div>
 
                     <div>
-                      <div class="font-bold text-xs text-slate-900">{d.reason}</div>
+                      <div class="font-bold text-xs text-slate-900">{d.reason || 'Loan'}</div>
                       <div class="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
                         <span>Loan date: {formatDate(d.date_incurred)}</span>
                         <span>Recorded: {formatDateTime(d.created_at)}</span>

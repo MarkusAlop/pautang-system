@@ -112,7 +112,7 @@
             <span class="font-bold text-slate-800">{debt.person_name} {debt.person_nickname ? `(${debt.person_nickname})` : ''}</span>
           </div>
           <div class="text-xs text-slate-600 truncate mb-2">
-            Purpose: <span class="font-medium text-slate-800">{debt.reason}</span>
+            Purpose: <span class="font-medium text-slate-800">{debt.reason || 'Not specified'}</span>
           </div>
           <div class="flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
             <div>

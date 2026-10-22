@@ -213,10 +213,6 @@ export function setupApiRoutes(router) {
         return res.status(400).json({ error: 'A valid loan amount is required' });
       }
 
-      if (!reason || !reason.trim()) {
-        return res.status(400).json({ error: 'Loan purpose/reason is required' });
-      }
-
       let targetPersonId = person_id;
 
       // Auto-create borrower if new
@@ -241,6 +237,7 @@ export function setupApiRoutes(router) {
 
       const now = new Date().toISOString();
       const finalDateIncurred = date_incurred || now.split('T')[0];
+      const loanReason = typeof reason === 'string' ? reason.trim() : '';
 
       const result = run(`
         INSERT INTO debts (person_id, type, amount, reason, date_incurred, due_date, notes, status, created_at, updated_at)
@@ -248,7 +245,7 @@ export function setupApiRoutes(router) {
       `, [
         targetPersonId,
         Number(amount),
-        reason.trim(),
+        loanReason,
         finalDateIncurred,
         due_date || null,
         notes ? notes.trim() : null,

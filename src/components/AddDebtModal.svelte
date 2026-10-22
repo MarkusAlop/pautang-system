@@ -66,11 +66,6 @@
       return;
     }
 
-    if (!reason.trim()) {
-      error = 'Please enter the loan purpose or description.';
-      return;
-    }
-
     if (!person) {
       if (!personName.trim()) {
         error = 'Please enter the borrower\'s name.';
@@ -215,7 +210,7 @@
         <!-- 3. Loan Purpose / Reason -->
         <div>
           <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-            Purpose / Description
+            Purpose / Description (Optional)
           </label>
           <input
             type="text"
@@ -270,7 +265,7 @@
 
         <!-- 5. Additional Notes -->
         <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Additional Notes / Agreement</label>
+          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Additional Notes / Agreement (Optional)</label>
           <textarea
             bind:value={notes}
             rows="2"

@@ -226,7 +226,7 @@
         <div class="space-y-2 text-xs">
           <div class="flex items-start gap-2">
             <span class="font-bold text-slate-600 shrink-0 w-28">Purpose:</span>
-            <span class="text-slate-900 font-medium">{debt.reason}</span>
+            <span class="text-slate-900 font-medium">{debt.reason || 'Not specified'}</span>
           </div>
           {#if debt.notes}
             <div class="flex items-start gap-2">
