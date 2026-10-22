@@ -34,7 +34,6 @@
   };
   let debts = [];
   let people = [];
-  let loading = true;
   let toast = null;
 
   // Modals state
