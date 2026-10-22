@@ -75,6 +75,7 @@
 
   // Action handlers
   function handleOpenAddDebt() {
+    activePerson = null;
     isAddDebtOpen = true;
   }
 
@@ -347,7 +348,7 @@
   <!-- MODALS -->
   <AddDebtModal
     isOpen={isAddDebtOpen}
-    {people}
+    person={activePerson}
     onClose={() => isAddDebtOpen = false}
     onSubmit={handleCreateDebt}
   />

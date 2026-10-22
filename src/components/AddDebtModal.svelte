@@ -2,13 +2,10 @@
   import { X, User, DollarSign, Calendar, FileText, AlertCircle } from 'lucide-svelte';
 
   export let isOpen = false;
-  export let people = [];
+  export let person = null;
   export let onClose = () => {};
   export let onSubmit = async (data) => {};
 
-  let isNewPerson = false;
-  let selectedPersonId = '';
-  
   // New borrower fields
   let personName = '';
   let personNickname = '';
@@ -36,8 +33,6 @@
   ];
 
   function resetForm() {
-    isNewPerson = people.length === 0;
-    selectedPersonId = people.length > 0 ? people[0].id : '';
     personName = '';
     personNickname = '';
     personRelationship = 'Friend';
@@ -48,14 +43,6 @@
     dueDate = '';
     notes = '';
     error = '';
-  }
-
-  $: if (isOpen) {
-    if (people.length === 0) {
-      isNewPerson = true;
-    } else if (!selectedPersonId) {
-      selectedPersonId = people[0].id;
-    }
   }
 
   function setDueDateDays(days) {
@@ -88,14 +75,9 @@
       return;
     }
 
-    if (isNewPerson) {
+    if (!person) {
       if (!personName.trim()) {
         error = 'Please enter the borrower\'s name.';
-        return;
-      }
-    } else {
-      if (!selectedPersonId) {
-        error = 'Please select a borrower from the list or add a new one.';
         return;
       }
     }
@@ -111,13 +93,13 @@
         notes: notes ? notes.trim() : null
       };
 
-      if (isNewPerson) {
+      if (person) {
+        payload.person_id = Number(person.id);
+      } else {
         payload.person_name = personName.trim();
         payload.person_nickname = personNickname ? personNickname.trim() : null;
         payload.person_relationship = personRelationship;
         payload.person_phone = personPhone ? personPhone.trim() : null;
-      } else {
-        payload.person_id = Number(selectedPersonId);
       }
 
       await onSubmit(payload);
@@ -166,28 +148,17 @@
             <label class="text-xs font-bold text-slate-700 uppercase tracking-wider">
               Who borrowed the money? (Borrower)
             </label>
-            {#if people.length > 0}
-              <button
-                type="button"
-                on:click={() => isNewPerson = !isNewPerson}
-                class="text-xs text-emerald-600 hover:text-emerald-700 font-semibold"
-              >
-                {isNewPerson ? 'Select from existing list' : '+ Add new borrower'}
-              </button>
-            {/if}
           </div>
 
-          {#if !isNewPerson && people.length > 0}
-            <select
-              bind:value={selectedPersonId}
-              class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:outline-none"
-            >
-              {#each people as p}
-                <option value={p.id}>
-                  {p.name} {p.nickname ? `(${p.nickname})` : ''} - {p.relationship}
-                </option>
-              {/each}
-            </select>
+          {#if person}
+            <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+              <div class="text-sm font-semibold text-slate-900">
+                {person.name}{person.nickname ? ` (${person.nickname})` : ''}
+              </div>
+              {#if person.relationship}
+                <div class="text-xs text-slate-500 mt-0.5">{person.relationship}</div>
+              {/if}
+            </div>
           {:else}
             <!-- New Borrower Inputs -->
             <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
