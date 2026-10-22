@@ -53,6 +53,7 @@ export const api = {
     return request(`/api/payments${query ? '?' + query : ''}`);
   },
   createPayment: (data) => request('/api/payments', { method: 'POST', body: JSON.stringify(data) }),
+  updatePayment: (id, data) => request(`/api/payments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deletePayment: (id) => request(`/api/payments/${id}`, { method: 'DELETE' }),
 
   // People

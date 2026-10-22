@@ -1,7 +1,7 @@
 <script>
   import { 
     X, Plus, MessageCircle, FileText, Trash2, Calendar, 
-    ArrowDownLeft, CheckCircle2, AlertCircle, Phone, Printer
+    ArrowDownLeft, CheckCircle2, AlertCircle, Phone, Printer, Pencil, Check
   } from 'lucide-svelte';
   import { formatCurrency, formatDate, getDueDateStatus, getRelationshipBadge } from '../lib/formatters.js';
 
@@ -11,11 +11,89 @@
   export let onOpenPayment = (debt) => {};
   export let onOpenReminder = (debt) => {};
   export let onOpenStatement = (debt) => {};
+  export let onUpdateAmount = async (debt, amount) => {};
+  export let onUpdatePayment = async (paymentId, amount) => {};
   export let onDeleteDebt = (debt) => {};
   export let onDeletePayment = (paymentId) => {};
 
+  let isEditingAmount = false;
+  let editedAmount = '';
+  let amountError = '';
+  let savingAmount = false;
+  let editingPaymentId = null;
+  let editedPaymentAmount = '';
+  let paymentAmountError = '';
+  let savingPaymentAmount = false;
+
   $: dueInfo = debt ? getDueDateStatus(debt.due_date, debt.balance <= 0 || debt.status === 'forgiven') : null;
   $: percentPaid = debt ? Math.min(100, Math.round(((debt.total_paid || 0) / (debt.amount || 1)) * 100)) : 0;
+
+  function startEditingAmount() {
+    editedAmount = debt.amount;
+    amountError = '';
+    isEditingAmount = true;
+  }
+
+  function cancelEditingAmount() {
+    isEditingAmount = false;
+    amountError = '';
+  }
+
+  async function saveAmount() {
+    const nextAmount = Number(editedAmount);
+    const totalPaid = Number(debt.total_paid) || 0;
+
+    if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+      amountError = 'Enter a valid amount greater than zero.';
+      return;
+    }
+
+    if (nextAmount < totalPaid) {
+      amountError = 'Amount cannot be less than the total already repaid.';
+      return;
+    }
+
+    savingAmount = true;
+    amountError = '';
+    try {
+      await onUpdateAmount(debt, nextAmount);
+      isEditingAmount = false;
+    } catch (error) {
+      amountError = error.message || 'Could not update the loan amount.';
+    } finally {
+      savingAmount = false;
+    }
+  }
+
+  function startEditingPayment(payment) {
+    editingPaymentId = payment.id;
+    editedPaymentAmount = payment.amount;
+    paymentAmountError = '';
+  }
+
+  function cancelEditingPayment() {
+    editingPaymentId = null;
+    paymentAmountError = '';
+  }
+
+  async function savePaymentAmount(payment) {
+    const nextAmount = Number(editedPaymentAmount);
+    if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+      paymentAmountError = 'Enter a valid amount greater than zero.';
+      return;
+    }
+
+    savingPaymentAmount = true;
+    paymentAmountError = '';
+    try {
+      await onUpdatePayment(payment.id, nextAmount);
+      editingPaymentId = null;
+    } catch (error) {
+      paymentAmountError = error.message || 'Could not update the payment amount.';
+    } finally {
+      savingPaymentAmount = false;
+    }
+  }
 </script>
 
 {#if isOpen && debt}
@@ -64,7 +142,55 @@
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
             <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Principal Lent</span>
-            <span class="text-lg font-bold font-mono text-slate-800">{formatCurrency(debt.amount)}</span>
+            {#if isEditingAmount}
+              <div class="mt-1 flex items-center gap-1">
+                <span class="text-sm font-bold text-slate-500">₱</span>
+                <input
+                  type="number"
+                  min={debt.total_paid || 0.01}
+                  step="any"
+                  bind:value={editedAmount}
+                  class="w-full min-w-0 px-2 py-1 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  aria-label="Loan amount"
+                />
+                <button
+                  type="button"
+                  on:click={saveAmount}
+                  disabled={savingAmount}
+                  class="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-lg disabled:opacity-50"
+                  title="Save amount"
+                  aria-label="Save amount"
+                >
+                  <Check class="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  on:click={cancelEditingAmount}
+                  disabled={savingAmount}
+                  class="p-1.5 text-slate-500 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+                  title="Cancel editing"
+                  aria-label="Cancel editing"
+                >
+                  <X class="w-4 h-4" />
+                </button>
+              </div>
+              {#if amountError}
+                <span class="text-[10px] text-red-600 block mt-1">{amountError}</span>
+              {/if}
+            {:else}
+              <div class="flex items-center justify-between gap-1">
+                <span class="text-lg font-bold font-mono text-slate-800">{formatCurrency(debt.amount)}</span>
+                <button
+                  type="button"
+                  on:click={startEditingAmount}
+                  class="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg"
+                  title="Edit loan amount"
+                  aria-label="Edit loan amount"
+                >
+                  <Pencil class="w-3.5 h-3.5" />
+                </button>
+              </div>
+            {/if}
             <span class="text-[10px] text-slate-400 block mt-0.5">{formatDate(debt.date_incurred)}</span>
           </div>
 
@@ -163,15 +289,12 @@
           {:else}
             <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100">
               {#each debt.payments as p (p.id)}
-                <div class="p-3 flex items-center justify-between text-xs hover:bg-slate-50 transition-colors">
+                <div class="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-50 transition-colors">
                   <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-[10px]">
                       {p.payment_method === 'GCash' ? 'GC' : p.payment_method === 'Maya' ? 'MY' : '₱'}
                     </div>
                     <div>
-                      <div class="font-bold text-slate-900 font-mono">
-                        {formatCurrency(p.amount)}
-                      </div>
                       <div class="text-[11px] text-slate-500 flex items-center gap-2">
                         <span>{formatDate(p.payment_date)}</span>
                         <span>• {p.payment_method}</span>
@@ -185,13 +308,63 @@
                     </div>
                   </div>
 
-                  <button
-                    on:click={() => onDeletePayment(p.id)}
-                    class="p-1.5 text-slate-300 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"
-                    title="Delete this payment record"
-                  >
-                    <Trash2 class="w-3.5 h-3.5" />
-                  </button>
+                  <div class="flex items-center gap-1 self-end sm:self-auto">
+                    <div class="text-right">
+                      {#if editingPaymentId === p.id}
+                        <div class="flex items-center justify-end gap-1.5">
+                          <span class="text-xs font-bold text-slate-500">₱</span>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="any"
+                            bind:value={editedPaymentAmount}
+                            class="w-28 px-2 py-1.5 border border-slate-300 rounded-lg text-right font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            aria-label="Payment amount"
+                          />
+                          <button
+                            type="button"
+                            on:click={() => savePaymentAmount(p)}
+                            disabled={savingPaymentAmount}
+                            class="px-2 py-1.5 flex items-center gap-1 text-emerald-700 hover:bg-emerald-100 rounded-lg disabled:opacity-50"
+                          >
+                            <Check class="w-3.5 h-3.5" />
+                            <span>{savingPaymentAmount ? 'Saving' : 'Save'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            on:click={cancelEditingPayment}
+                            disabled={savingPaymentAmount}
+                            class="px-2 py-1.5 text-slate-500 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {#if paymentAmountError}
+                          <div class="text-[10px] text-red-600 mt-1">{paymentAmountError}</div>
+                        {/if}
+                      {:else}
+                        <div class="flex items-center justify-end gap-1">
+                          <div class="font-bold text-slate-900 font-mono">{formatCurrency(p.amount)}</div>
+                          <button
+                            type="button"
+                            on:click={() => startEditingPayment(p)}
+                            class="px-2 py-1.5 flex items-center gap-1 text-emerald-700 hover:bg-emerald-50 rounded-lg"
+                          >
+                            <Pencil class="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
+                        </div>
+                      {/if}
+                    </div>
+
+                    <button
+                      on:click={() => onDeletePayment(p.id)}
+                      class="p-1.5 text-slate-300 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"
+                      title="Delete this payment record"
+                    >
+                      <Trash2 class="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               {/each}
             </div>

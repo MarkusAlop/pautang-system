@@ -397,7 +397,39 @@ export function setupApiRoutes(router) {
     }
   });
 
-  // 9. DELETE /api/payments/:id
+  // 9. PUT /api/payments/:id
+  router.put('/api/payments/:id', (req, res) => {
+    try {
+      const paymentId = Number(req.params.id);
+      const amount = Number(req.body.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res.status(400).json({ error: 'Valid payment amount is required' });
+      }
+
+      const payment = queryOne(`SELECT * FROM payments WHERE id = ?`, [paymentId]);
+      if (!payment) return res.status(404).json({ error: 'Payment not found' });
+
+      run(`UPDATE payments SET amount = ? WHERE id = ?`, [amount, paymentId]);
+
+      const debt = queryOne(`SELECT * FROM debts WHERE id = ?`, [payment.debt_id]);
+      if (debt && debt.status !== 'forgiven') {
+        const totalPaidRow = queryOne(`SELECT SUM(amount) as total FROM payments WHERE debt_id = ?`, [payment.debt_id]);
+        const newTotalPaid = Number(totalPaidRow?.total || 0);
+        const now = new Date().toISOString();
+        if (newTotalPaid >= debt.amount) {
+          run(`UPDATE debts SET status = 'paid', updated_at = ? WHERE id = ?`, [now, payment.debt_id]);
+        } else if (debt.status === 'paid') {
+          run(`UPDATE debts SET status = 'active', updated_at = ? WHERE id = ?`, [now, payment.debt_id]);
+        }
+      }
+
+      res.json(queryOne(`SELECT * FROM payments WHERE id = ?`, [paymentId]));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 10. DELETE /api/payments/:id
   router.delete('/api/payments/:id', (req, res) => {
     try {
       const paymentId = Number(req.params.id);

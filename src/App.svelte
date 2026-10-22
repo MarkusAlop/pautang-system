@@ -85,6 +85,13 @@
     showToast('New pautang record successfully saved!');
   }
 
+  async function handleUpdateDebtAmount(debt, amount) {
+    await api.updateDebt(debt.id, { amount });
+    activeDebt = await api.getDebt(debt.id);
+    await refreshData();
+    showToast('Loan amount updated.');
+  }
+
   async function handleOpenDebtDetail(debt) {
     try {
       const full = await api.getDebt(debt.id);
@@ -145,6 +152,13 @@
         showToast(e.message, 'error');
       }
     }
+  }
+
+  async function handleUpdatePayment(paymentId, amount) {
+    await api.updatePayment(paymentId, { amount });
+    activeDebt = await api.getDebt(activeDebt.id);
+    await refreshData();
+    showToast('Payment amount updated.');
   }
 
   async function handleSelectPerson(person) {
@@ -354,7 +368,9 @@
     onOpenPayment={(d) => { isDebtDetailOpen = false; handleOpenPayment(d); }}
     onOpenReminder={(d) => { isDebtDetailOpen = false; handleOpenReminder(d); }}
     onOpenStatement={(d) => { isDebtDetailOpen = false; handleOpenStatement(d); }}
+    onUpdateAmount={handleUpdateDebtAmount}
     onDeleteDebt={handleDeleteDebt}
+    onUpdatePayment={handleUpdatePayment}
     onDeletePayment={handleDeletePayment}
   />
 
