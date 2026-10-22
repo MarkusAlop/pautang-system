@@ -170,7 +170,6 @@
     <div class="divide-y divide-slate-100">
       {#each filteredDebts as debt (debt.id)}
         {@const dueInfo = getDueDateStatus(debt.due_date, debt.balance <= 0 || debt.status === 'forgiven')}
-        {@const percentPaid = Math.min(100, Math.round(((debt.total_paid || 0) / (debt.amount || 1)) * 100))}
         
         <div class="p-4 sm:p-5 hover:bg-slate-50/80 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
           
@@ -231,7 +230,7 @@
 
           </div>
 
-          <!-- Middle: Balances & Progress bar -->
+          <!-- Middle: Debt amounts -->
           <div class="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center border-t md:border-t-0 pt-2 md:pt-0 border-slate-100 shrink-0 min-w-[150px]">
             
             <div>
@@ -246,19 +245,8 @@
               <div class="text-[11px] text-slate-500 text-right">
                 Original: {formatCurrency(debt.amount)}
               </div>
-            </div>
-
-            <!-- Mini progress bar -->
-            <div class="w-32 hidden sm:block mt-1.5">
-              <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                <div 
-                  class={`h-full rounded-full transition-all duration-500 ${percentPaid >= 100 ? 'bg-emerald-500' : 'bg-emerald-600'}`}
-                  style={`width: ${percentPaid}%`}
-                ></div>
-              </div>
-              <div class="flex justify-between text-[10px] text-slate-500 mt-0.5">
-                <span>{percentPaid}% repaid</span>
-                <span>{debt.balance <= 0 ? 'Settled' : 'Balance'}</span>
+              <div class="text-[11px] text-slate-500 text-right">
+                Total paid: {formatCurrency(debt.total_paid)}
               </div>
             </div>
 

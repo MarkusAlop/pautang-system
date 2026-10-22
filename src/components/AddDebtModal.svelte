@@ -115,8 +115,10 @@
       <!-- Modal Header -->
       <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
         <div>
-          <h3 class="text-base font-bold text-slate-900">Record New Pautang</h3>
-          <p class="text-xs text-slate-500">Log money you lent to a family member, friend, or contact.</p>
+          <h3 class="text-base font-bold text-slate-900">{person ? 'Add New Loan' : 'Record New Pautang'}</h3>
+          <p class="text-xs text-slate-500">
+            {person ? 'Add another loan for this borrower.' : 'Log money you lent to a family member, friend, or contact.'}
+          </p>
         </div>
         <button
           on:click={onClose}
@@ -292,7 +294,7 @@
             disabled={loading}
             class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white text-sm font-bold rounded-xl shadow-md shadow-emerald-600/30 transition-all"
           >
-            {loading ? 'Saving...' : 'Save Pautang'}
+            {loading ? 'Saving...' : person ? 'Add Loan' : 'Save Pautang'}
           </button>
         </div>
 

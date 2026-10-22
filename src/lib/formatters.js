@@ -30,6 +30,20 @@ export function formatDate(dateString) {
   }
 }
 
+export function formatDateTime(dateTimeString) {
+  if (!dateTimeString) return '-';
+  const date = new Date(dateTimeString);
+  if (Number.isNaN(date.getTime())) return dateTimeString;
+  return date.toLocaleString('en-PH', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+}
+
 export function getDueDateStatus(dueDateStr, isPaid = false) {
   if (!dueDateStr || isPaid) return null;
   const today = new Date();

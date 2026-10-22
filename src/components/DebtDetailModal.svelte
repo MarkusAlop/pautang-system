@@ -3,7 +3,7 @@
     X, Plus, MessageCircle, FileText, Trash2, Calendar, 
     ArrowDownLeft, CheckCircle2, AlertCircle, Phone, Printer, Pencil, Check
   } from 'lucide-svelte';
-  import { formatCurrency, formatDate, getDueDateStatus, getRelationshipBadge } from '../lib/formatters.js';
+  import { formatCurrency, formatDate, formatDateTime, getDueDateStatus, getRelationshipBadge } from '../lib/formatters.js';
 
   export let isOpen = false;
   export let debt = null;
@@ -26,8 +26,6 @@
   let savingPaymentAmount = false;
 
   $: dueInfo = debt ? getDueDateStatus(debt.due_date, debt.balance <= 0 || debt.status === 'forgiven') : null;
-  $: percentPaid = debt ? Math.min(100, Math.round(((debt.total_paid || 0) / (debt.amount || 1)) * 100)) : 0;
-
   function startEditingAmount() {
     editedAmount = debt.amount;
     amountError = '';
@@ -191,13 +189,13 @@
                 </button>
               </div>
             {/if}
-            <span class="text-[10px] text-slate-400 block mt-0.5">{formatDate(debt.date_incurred)}</span>
+            <span class="text-[10px] text-slate-400 block mt-0.5">Loan date: {formatDate(debt.date_incurred)}</span>
+            <span class="text-[10px] text-slate-400 block">Recorded: {formatDateTime(debt.created_at)}</span>
           </div>
 
           <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
             <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Repaid</span>
             <span class="text-lg font-bold font-mono text-emerald-600">{formatCurrency(debt.total_paid)}</span>
-            <span class="text-[10px] text-slate-400 block mt-0.5">{percentPaid}% repaid</span>
           </div>
 
           <div class={`rounded-2xl p-3.5 border ${
@@ -222,22 +220,6 @@
                 <span class="text-slate-500">No due date set</span>
               {/if}
             </span>
-          </div>
-        </div>
-
-        <!-- Progress Bar -->
-        <div class="bg-slate-50 rounded-2xl p-4 border border-slate-200">
-          <div class="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
-            <span>Repayment Progress</span>
-            <span>{percentPaid}% Repaid ({formatCurrency(debt.total_paid)} of {formatCurrency(debt.amount)})</span>
-          </div>
-          <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
-            <div 
-              class={`h-full rounded-full transition-all duration-500 ${
-                percentPaid >= 100 ? 'bg-emerald-500' : 'bg-emerald-600'
-              }`}
-              style={`width: ${percentPaid}%`}
-            ></div>
           </div>
         </div>
 
@@ -302,6 +284,7 @@
                           <span class="font-mono text-slate-400">Ref: {p.reference_no}</span>
                         {/if}
                       </div>
+                      <div class="text-[10px] text-slate-400">Recorded: {formatDateTime(p.created_at)}</div>
                       {#if p.notes}
                         <div class="text-[10px] text-slate-400 italic">"{p.notes}"</div>
                       {/if}

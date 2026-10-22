@@ -13,6 +13,7 @@
   import StatementModal from './components/StatementModal.svelte';
   import PersonDetailModal from './components/PersonDetailModal.svelte';
   import { Plus, Sparkles, AlertCircle, CheckCircle2 } from 'lucide-svelte';
+  import { formatCurrency } from './lib/formatters.js';
 
   // Navigation State
   let activeTab = 'dashboard'; // 'dashboard', 'debts', 'people', 'settings'
@@ -81,9 +82,16 @@
   }
 
   async function handleCreateDebt(data) {
+    const borrowerName = activePerson?.name;
     await api.createDebt(data);
     await refreshData();
-    showToast('New pautang record successfully saved!');
+    if (data.person_id) {
+      activePerson = await api.getPerson(data.person_id);
+      isPersonDetailOpen = true;
+      showToast(`${borrowerName || activePerson.name} borrowed an additional ${formatCurrency(data.amount)}.`);
+    } else {
+      showToast('New pautang record successfully saved!');
+    }
   }
 
   async function handleUpdateDebtAmount(debt, amount) {
