@@ -288,17 +288,6 @@
                     <span>Record First Pautang</span>
                   </button>
 
-                  <button
-                    on:click={async () => {
-                      await api.seedDemo();
-                      await refreshData();
-                      showToast('Sample pautang records loaded!');
-                    }}
-                    class="px-5 py-2.5 bg-emerald-800/60 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl border border-white/20 transition-all flex items-center gap-1.5"
-                  >
-                    <Sparkles class="w-4 h-4" />
-                    <span>Load Sample Data</span>
-                  </button>
                 </div>
               </div>
             </div>
