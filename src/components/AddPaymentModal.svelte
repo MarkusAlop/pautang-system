@@ -16,8 +16,14 @@
 
   let loading = false;
   let error = '';
+  let initializedDebtId = null;
 
-  $: if (debt && isOpen) {
+  $: if (!isOpen) {
+    initializedDebtId = null;
+  }
+
+  $: if (debt && isOpen && initializedDebtId !== debt.id) {
+    initializedDebtId = debt.id;
     amount = debt.balance > 0 ? debt.balance : '';
     paymentDate = new Date().toISOString().split('T')[0];
     referenceNo = '';

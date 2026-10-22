@@ -47,6 +47,7 @@
 
   let activeDebt = null;
   let activePerson = null;
+  let reopenDebtAfterPayment = false;
 
   function showToast(message, type = 'success') {
     toast = { message, type };
@@ -103,14 +104,20 @@
     }
   }
 
-  function handleOpenPayment(debt) {
+  function handleOpenPayment(debt, reopenDebtAfter = false) {
     activeDebt = debt;
+    reopenDebtAfterPayment = reopenDebtAfter;
     isAddPaymentOpen = true;
   }
 
   async function handleRecordPayment(paymentData) {
     const res = await api.createPayment(paymentData);
     await refreshData();
+    if (reopenDebtAfterPayment) {
+      activeDebt = await api.getDebt(paymentData.debt_id);
+      isDebtDetailOpen = true;
+      reopenDebtAfterPayment = false;
+    }
     showToast(
       res.is_settled 
         ? 'Great! This loan has been fully settled! 🎉' 
@@ -365,7 +372,7 @@
     isOpen={isDebtDetailOpen}
     debt={activeDebt}
     onClose={() => isDebtDetailOpen = false}
-    onOpenPayment={(d) => { isDebtDetailOpen = false; handleOpenPayment(d); }}
+    onOpenPayment={(d) => { isDebtDetailOpen = false; handleOpenPayment(d, true); }}
     onOpenReminder={(d) => { isDebtDetailOpen = false; handleOpenReminder(d); }}
     onOpenStatement={(d) => { isDebtDetailOpen = false; handleOpenStatement(d); }}
     onUpdateAmount={handleUpdateDebtAmount}
