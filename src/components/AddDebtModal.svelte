@@ -8,9 +8,7 @@
 
   // New borrower fields
   let personName = '';
-  let personNickname = '';
   let personRelationship = 'Friend';
-  let personPhone = '';
 
   // Loan fields
   let amount = '';
@@ -34,9 +32,7 @@
 
   function resetForm() {
     personName = '';
-    personNickname = '';
     personRelationship = 'Friend';
-    personPhone = '';
     amount = '';
     reason = '';
     dateIncurred = new Date().toISOString().split('T')[0];
@@ -97,9 +93,7 @@
         payload.person_id = Number(person.id);
       } else {
         payload.person_name = personName.trim();
-        payload.person_nickname = personNickname ? personNickname.trim() : null;
         payload.person_relationship = personRelationship;
-        payload.person_phone = personPhone ? personPhone.trim() : null;
       }
 
       await onSubmit(payload);
@@ -152,9 +146,7 @@
 
           {#if person}
             <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-              <div class="text-sm font-semibold text-slate-900">
-                {person.name}{person.nickname ? ` (${person.nickname})` : ''}
-              </div>
+              <div class="text-sm font-semibold text-slate-900">{person.name}</div>
               {#if person.relationship}
                 <div class="text-xs text-slate-500 mt-0.5">{person.relationship}</div>
               {/if}
@@ -171,16 +163,10 @@
                 />
               </div>
               
-              <div class="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  bind:value={personNickname}
-                  placeholder="Nickname / Alias (e.g. Johnny)"
-                  class="px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
+              <div>
                 <select
                   bind:value={personRelationship}
-                  class="px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  class="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 >
                   <option value="Family">Family</option>
                   <option value="Friend">Friend</option>
@@ -189,15 +175,6 @@
                   <option value="Neighbor">Neighbor</option>
                   <option value="Other">Other</option>
                 </select>
-              </div>
-
-              <div>
-                <input
-                  type="text"
-                  bind:value={personPhone}
-                  placeholder="Phone / Mobile Number (e.g. 0917-xxx-xxxx)"
-                  class="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
               </div>
             </div>
           {/if}
