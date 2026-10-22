@@ -35,6 +35,7 @@
   let debts = [];
   let people = [];
   let toast = null;
+  let loading = true;
 
   // Modals state
   let isAddDebtOpen = false;
@@ -53,33 +54,16 @@
   }
 
   async function refreshData() {
+    loading = true;
     try {
-      const [sData, dData, pData] = await Promise.all([
+      const [nextStats, nextDebts, nextPeople] = await Promise.all([
         api.getStats(),
         api.getDebts(),
-        api.getPeople()
+        api.getPeople(),
       ]);
-      stats = sData;
-      debts = dData;
-      people = pData;
-
-      // Update activeDebt if open
-      if (activeDebt && isDebtDetailOpen) {
-        try {
-          const fresh = await api.getDebt(activeDebt.id);
-          activeDebt = fresh;
-        } catch (e) {}
-      }
-
-      // Update activePerson if open
-      if (activePerson && isPersonDetailOpen) {
-        try {
-          const freshP = await api.getPerson(activePerson.id);
-          activePerson = freshP;
-        } catch (e) {}
-      }
-    } catch (err) {
-      showToast(err.message || 'Error loading data', 'error');
+      stats = nextStats;
+      debts = nextDebts;
+      people = nextPeople;
     } finally {
       loading = false;
     }
