@@ -2,6 +2,7 @@
   import { X, CheckCircle2, DollarSign, Calendar, CreditCard, FileText, AlertCircle } from 'lucide-svelte';
   import confetti from 'canvas-confetti';
   import { formatCurrency } from '../lib/formatters.js';
+  import { QR_PAYMENT_METHODS, getPaymentQrFilePath, loadPaymentQrs } from '../lib/paymentQrs.js';
 
   export let isOpen = false;
   export let debt = null;
@@ -11,6 +12,9 @@
   let amount = '';
   let paymentDate = new Date().toISOString().split('T')[0];
   let paymentMethod = 'GCash';
+  let paymentQrs = {};
+  let missingFolderQrs = {};
+  let qrPreviewOpen = false;
   let referenceNo = '';
   let notes = '';
 
@@ -20,6 +24,17 @@
 
   $: if (!isOpen) {
     initializedDebtId = null;
+    qrPreviewOpen = false;
+  }
+
+  $: if (isOpen) {
+    paymentQrs = loadPaymentQrs();
+  }
+
+  $: qrImage = paymentQrs[paymentMethod] || (missingFolderQrs[paymentMethod] ? '' : getPaymentQrFilePath(paymentMethod));
+
+  function handleFolderQrError(method) {
+    missingFolderQrs = { ...missingFolderQrs, [method]: true };
   }
 
   $: if (debt && isOpen && initializedDebtId !== debt.id) {
@@ -29,16 +44,6 @@
     referenceNo = '';
     notes = '';
     error = '';
-  }
-
-  function setAmount(val) {
-    amount = val;
-  }
-
-  function setHalfAmount() {
-    if (debt) {
-      amount = Math.round((debt.balance / 2) * 100) / 100;
-    }
   }
 
   async function handleFormSubmit() {
@@ -153,44 +158,43 @@
               class="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold font-mono focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:outline-none"
             />
           </div>
-
-          <!-- Quick Preset Buttons -->
-          <div class="flex flex-wrap gap-1.5 mt-2">
-            <button
-              type="button"
-              on:click={() => setAmount(debt.balance)}
-              class="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold rounded-lg transition-colors"
-            >
-              Full Balance ({formatCurrency(debt.balance)})
-            </button>
-            <button
-              type="button"
-              on:click={setHalfAmount}
-              class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors"
-            >
-              50% Partial
-            </button>
-          </div>
         </div>
 
         <!-- 2. Payment Method -->
         <div>
           <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Payment Method</label>
-          <div class="grid grid-cols-3 gap-2 text-xs">
-            {#each ['GCash', 'Cash', 'Maya', 'Bank Transfer', 'Other'] as method}
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+            {#each QR_PAYMENT_METHODS as method}
               <button
                 type="button"
-                on:click={() => paymentMethod = method}
+                on:click={() => { paymentMethod = method; qrPreviewOpen = false; }}
                 class={`py-2 px-2 rounded-xl border text-center transition-all ${
                   paymentMethod === method
-                    ? 'border-emerald-600 bg-emerald-50 text-emerald-900 font-bold'
+                    ? 'border-blue-600 bg-blue-50 text-blue-900 font-bold'
                     : 'border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
+                aria-pressed={paymentMethod === method}
               >
                 {method}
               </button>
             {/each}
           </div>
+
+          {#if QR_PAYMENT_METHODS.includes(paymentMethod)}
+            {#if qrImage}
+              <div class="mt-3 p-3 border border-slate-200 rounded-xl text-center">
+                <p class="text-xs font-semibold text-slate-700 mb-2">{paymentMethod} QR</p>
+                <button type="button" on:click={() => qrPreviewOpen = true} class="inline-flex flex-col items-center gap-2">
+                  <img src={qrImage} alt={`${paymentMethod} payment QR`} on:error={() => handleFolderQrError(paymentMethod)} class="w-40 h-40 object-contain rounded-lg border border-slate-200" />
+                  <span class="text-[11px] text-blue-700">Click to enlarge</span>
+                </button>
+              </div>
+            {:else}
+              <p class="mt-2 text-xs text-slate-500">
+                No {paymentMethod} QR image found. Upload it in Settings → Payment QR Codes or add its PNG to public/payment-qrs/.
+              </p>
+            {/if}
+          {/if}
         </div>
 
         <!-- 3. Payment Date -->
@@ -211,7 +215,7 @@
           <input
             type="text"
             bind:value={referenceNo}
-            placeholder="e.g. GCash Ref No. or Bank Transfer ID"
+            placeholder="Enter the payment reference number"
             class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:outline-none"
           />
         </div>
@@ -222,7 +226,7 @@
           <input
             type="text"
             bind:value={notes}
-            placeholder="e.g. Handed cash at home, screenshot saved"
+            placeholder="Add payment details or remarks"
             class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:outline-none"
           />
         </div>
@@ -248,6 +252,21 @@
         </div>
 
       </form>
+
+      {#if qrPreviewOpen && qrImage}
+        <div class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <button type="button" class="absolute inset-0 bg-slate-950/80" on:click={() => qrPreviewOpen = false} aria-label="Close QR preview"></button>
+          <div class="relative z-10 w-full max-w-md bg-white rounded-2xl p-4 shadow-2xl" role="dialog" aria-modal="true" aria-label={`${paymentMethod} QR code`}>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-bold text-slate-900">{paymentMethod} QR</h3>
+              <button type="button" on:click={() => qrPreviewOpen = false} class="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg" aria-label="Close QR preview">
+                <X class="w-5 h-5" />
+              </button>
+            </div>
+            <img src={qrImage} alt={`${paymentMethod} payment QR`} on:error={() => handleFolderQrError(paymentMethod)} class="w-full max-h-[75vh] object-contain" />
+          </div>
+        </div>
+      {/if}
 
     </div>
 

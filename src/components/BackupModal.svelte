@@ -1,9 +1,10 @@
 <script>
   import { 
     Download, Database, Sparkles, Trash2, RefreshCw, 
-    CheckCircle2, AlertTriangle, FileSpreadsheet, ShieldAlert
+    CheckCircle2, AlertTriangle, FileSpreadsheet, ShieldAlert, Upload
   } from 'lucide-svelte';
   import { api } from '../lib/api.js';
+  import { QR_PAYMENT_METHODS, getPaymentQrFilePath, loadPaymentQrs, removePaymentQr, savePaymentQr } from '../lib/paymentQrs.js';
 
   export let onRefresh = async () => {};
 
@@ -11,6 +12,82 @@
   let error = '';
   let loading = false;
   let confirmReset = false;
+  let paymentQrs = loadPaymentQrs();
+  let missingFolderQrs = {};
+  let qrMessage = '';
+  let qrError = '';
+
+  async function prepareQrImage(file) {
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error('Choose a QR image smaller than 5 MB.');
+    }
+
+    const bitmap = await createImageBitmap(file);
+    const maxStoredSize = 400 * 1024;
+    let dimension = 1400;
+    let blob = null;
+
+    while (dimension >= 560) {
+      const scale = Math.min(1, dimension / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+
+      const context = canvas.getContext('2d');
+      if (!context) break;
+      context.imageSmoothingEnabled = false;
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (blob && blob.size <= maxStoredSize) break;
+      dimension = Math.floor(dimension * 0.8);
+    }
+
+    bitmap.close();
+    if (!blob || blob.size > maxStoredSize) {
+      throw new Error('Could not shrink this QR image enough. Try a cleaner or cropped image.');
+    }
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Could not read the optimized QR image.'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function handleFolderQrError(method) {
+    missingFolderQrs = { ...missingFolderQrs, [method]: true };
+  }
+
+  async function handleQrUpload(method, event) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = '';
+    qrMessage = '';
+    qrError = '';
+
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      qrError = 'Choose an image file for the QR code.';
+      return;
+    }
+
+    try {
+      const optimizedImage = await prepareQrImage(file);
+      paymentQrs = savePaymentQr(method, optimizedImage);
+      missingFolderQrs = { ...missingFolderQrs, [method]: false };
+      qrMessage = `${method} QR saved in this browser.`;
+    } catch (uploadError) {
+      qrError = uploadError.message || 'Could not save the QR image. Try a smaller image.';
+    }
+  }
+
+  function handleRemoveQr(method) {
+    paymentQrs = removePaymentQr(method);
+    missingFolderQrs = { ...missingFolderQrs, [method]: false };
+    qrMessage = `${method} browser upload removed. A folder image will be used if available.`;
+    qrError = '';
+  }
 
   async function handleSeedDemo() {
     message = '';
@@ -171,5 +248,60 @@
     </div>
 
   </div>
+
+  <section class="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm">
+    <div class="mb-4">
+      <h3 class="text-sm font-bold text-slate-900">Payment QR Codes</h3>
+      <p class="text-xs text-slate-500 mt-1">Upload your own QR image for each payment method. Images are saved in this browser.</p>
+    </div>
+
+    {#if qrMessage}
+      <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800" role="status">
+        {qrMessage}
+      </div>
+    {/if}
+    {#if qrError}
+      <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700" role="alert">
+        {qrError}
+      </div>
+    {/if}
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {#each QR_PAYMENT_METHODS as method}
+        {@const folderQrPath = getPaymentQrFilePath(method)}
+        {@const qrIsAvailable = Boolean(paymentQrs[method]) || !missingFolderQrs[method]}
+        <div class="border border-slate-200 rounded-xl p-3 flex flex-col gap-3">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold text-slate-800">{method}</span>
+            <span class={`text-[10px] font-semibold ${qrIsAvailable ? 'text-blue-700' : 'text-slate-400'}`}>
+              {qrIsAvailable ? 'QR ready' : 'Not set'}
+            </span>
+          </div>
+
+          {#if paymentQrs[method]}
+            <img src={paymentQrs[method]} alt={`${method} payment QR`} class="w-full aspect-square object-contain bg-white rounded-lg border border-slate-100" />
+          {:else if !missingFolderQrs[method]}
+            <img src={folderQrPath} alt={`${method} payment QR`} on:error={() => handleFolderQrError(method)} class="w-full aspect-square object-contain bg-white rounded-lg border border-slate-100" />
+          {:else}
+            <div class="w-full aspect-square bg-slate-50 rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-[11px] text-slate-400">
+              No image uploaded
+            </div>
+          {/if}
+
+          <label class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg cursor-pointer transition-colors">
+            <Upload class="w-3.5 h-3.5" />
+            <span>{paymentQrs[method] ? 'Replace QR' : 'Upload QR'}</span>
+            <input type="file" accept="image/*" class="sr-only" on:change={(event) => handleQrUpload(method, event)} />
+          </label>
+
+          {#if paymentQrs[method]}
+            <button type="button" on:click={() => handleRemoveQr(method)} class="text-xs text-slate-500 hover:text-red-600">
+              Remove QR
+            </button>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  </section>
 
 </div>
