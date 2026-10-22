@@ -122,19 +122,6 @@
     isStatementOpen = true;
   }
 
-  async function handleForgiveDebt(debt) {
-    if (confirm(`Are you sure you want to forgive the remaining loan of ${debt.person_name}?`)) {
-      try {
-        await api.updateDebt(debt.id, { status: 'forgiven' });
-        await refreshData();
-        showToast('Loan has been marked as Forgiven.');
-        isDebtDetailOpen = false;
-      } catch (e) {
-        showToast(e.message, 'error');
-      }
-    }
-  }
-
   async function handleDeleteDebt(debt) {
     if (confirm(`Are you sure you want to delete this loan record?`)) {
       try {
@@ -367,7 +354,6 @@
     onOpenPayment={(d) => { isDebtDetailOpen = false; handleOpenPayment(d); }}
     onOpenReminder={(d) => { isDebtDetailOpen = false; handleOpenReminder(d); }}
     onOpenStatement={(d) => { isDebtDetailOpen = false; handleOpenStatement(d); }}
-    onForgiveDebt={handleForgiveDebt}
     onDeleteDebt={handleDeleteDebt}
     onDeletePayment={handleDeletePayment}
   />

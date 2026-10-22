@@ -7,7 +7,7 @@
   import { formatCurrency, formatDate, getDueDateStatus, getRelationshipBadge } from '../lib/formatters.js';
 
   export let debts = [];
-  export let filterStatus = 'all'; // 'all', 'active', 'overdue', 'paid', 'forgiven'
+  export let filterStatus = 'all'; // 'all', 'active', 'overdue', 'paid'
   export let searchQuery = '';
 
   export let onSelectDebt = (debt) => {};
@@ -28,8 +28,6 @@
         if (d.balance <= 0 || d.status === 'forgiven') return false;
       } else if (filterStatus === 'paid') {
         if (d.computed_status !== 'paid') return false;
-      } else if (filterStatus === 'forgiven') {
-        if (d.status !== 'forgiven') return false;
       }
 
       // Search filter

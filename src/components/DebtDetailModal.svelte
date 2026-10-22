@@ -1,7 +1,7 @@
 <script>
   import { 
     X, Plus, MessageCircle, FileText, Trash2, Calendar, 
-    ArrowDownLeft, CheckCircle2, AlertCircle, Phone, HeartHandshake, Printer
+    ArrowDownLeft, CheckCircle2, AlertCircle, Phone, Printer
   } from 'lucide-svelte';
   import { formatCurrency, formatDate, getDueDateStatus, getRelationshipBadge } from '../lib/formatters.js';
 
@@ -11,7 +11,6 @@
   export let onOpenPayment = (debt) => {};
   export let onOpenReminder = (debt) => {};
   export let onOpenStatement = (debt) => {};
-  export let onForgiveDebt = (debt) => {};
   export let onDeleteDebt = (debt) => {};
   export let onDeletePayment = (paymentId) => {};
 
@@ -211,17 +210,6 @@
               <Printer class="w-3.5 h-3.5" />
               <span>Statement Slip</span>
             </button>
-
-            <!-- Forgive Debt -->
-            {#if debt.balance > 0 && debt.status !== 'forgiven'}
-              <button
-                on:click={() => onForgiveDebt(debt)}
-                class="px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-semibold rounded-xl border border-purple-200 transition-colors flex items-center gap-1.5"
-              >
-                <HeartHandshake class="w-3.5 h-3.5" />
-                <span>Forgive Loan</span>
-              </button>
-            {/if}
 
             <!-- Delete Debt -->
             <button
