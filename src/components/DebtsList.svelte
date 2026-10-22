@@ -1,7 +1,7 @@
 <script>
   import { 
     Search, Filter, Plus, Calendar, AlertTriangle, CheckCircle2, 
-    ArrowDownLeft, MessageCircle, FileText, 
+    ArrowDownLeft, FileText, 
     Trash2, ChevronRight, Phone, Clock
   } from 'lucide-svelte';
   import { formatCurrency, formatDate, getDueDateStatus, getRelationshipBadge } from '../lib/formatters.js';
@@ -12,7 +12,6 @@
 
   export let onSelectDebt = (debt) => {};
   export let onOpenPayment = (debt) => {};
-  export let onOpenReminder = (debt) => {};
   export let onOpenAddDebt = () => {};
   export let onDeleteDebt = (debt) => {};
 
@@ -266,14 +265,6 @@
                 <span>+ Payment</span>
               </button>
 
-              <!-- Reminder Generator -->
-              <button
-                on:click={() => onOpenReminder(debt)}
-                class="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-                title="Generate reminder message"
-              >
-                <MessageCircle class="w-4 h-4" />
-              </button>
             {:else if debt.computed_status === 'paid'}
               <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-lg">
                 <CheckCircle2 class="w-3.5 h-3.5" />

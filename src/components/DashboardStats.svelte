@@ -92,14 +92,14 @@
 
     <!-- 3. Total Principal Lent -->
     <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
-      <div class="absolute top-0 right-0 w-24 h-24 bg-purple-50 rounded-bl-full -mr-4 -mt-4 transition-all"></div>
+      <div class="absolute top-0 right-0 w-24 h-24 bg-sky-50 rounded-bl-full -mr-4 -mt-4 transition-all"></div>
       <div class="flex items-center justify-between mb-3">
         <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Total Amount Lent</span>
-        <div class="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center">
+        <div class="w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center">
           <Wallet class="w-4 h-4 stroke-[2.5]" />
         </div>
       </div>
-      <div class="text-2xl font-extrabold text-purple-800 font-mono tracking-tight">
+      <div class="text-2xl font-extrabold text-sky-800 font-mono tracking-tight">
         {formatCurrency(stats.total_lent)}
       </div>
       <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-700">

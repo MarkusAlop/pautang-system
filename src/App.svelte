@@ -9,7 +9,6 @@
   import AddDebtModal from './components/AddDebtModal.svelte';
   import AddPaymentModal from './components/AddPaymentModal.svelte';
   import DebtDetailModal from './components/DebtDetailModal.svelte';
-  import ReminderModal from './components/ReminderModal.svelte';
   import StatementModal from './components/StatementModal.svelte';
   import PersonDetailModal from './components/PersonDetailModal.svelte';
   import { Plus, Sparkles, AlertCircle, CheckCircle2 } from 'lucide-svelte';
@@ -42,7 +41,6 @@
   let isAddDebtOpen = false;
   let isAddPaymentOpen = false;
   let isDebtDetailOpen = false;
-  let isReminderOpen = false;
   let isStatementOpen = false;
   let isPersonDetailOpen = false;
 
@@ -132,11 +130,6 @@
         : 'Payment successfully recorded!'
     );
     return res;
-  }
-
-  function handleOpenReminder(debt) {
-    activeDebt = debt;
-    isReminderOpen = true;
   }
 
   function handleOpenStatement(debt) {
@@ -234,9 +227,9 @@
 
   <!-- Toast Notification -->
   {#if toast}
-    <div class="fixed bottom-5 right-5 z-50 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-xl text-xs font-bold transition-all animate-in slide-in-from-bottom-5 ${
+    <div class={`fixed bottom-5 right-5 z-50 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-xl text-xs font-bold transition-all animate-in slide-in-from-bottom-5 ${
       toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-900 text-white'
-    }">
+    }`}>
       {#if toast.type === 'error'}
         <AlertCircle class="w-4 h-4 text-red-200" />
       {:else}
@@ -268,7 +261,7 @@
 
           <!-- Welcome banner if empty -->
           {#if debts.length === 0}
-            <div class="bg-gradient-to-r from-emerald-600 to-teal-700 rounded-3xl p-8 sm:p-10 text-white shadow-xl relative overflow-hidden">
+            <div class="bg-gradient-to-r from-emerald-600 to-blue-800 rounded-3xl p-8 sm:p-10 text-white shadow-xl relative overflow-hidden">
               <div class="max-w-xl space-y-4">
                 <span class="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-bold tracking-wide uppercase">
                   Welcome to PautangTrack
@@ -301,7 +294,6 @@
               bind:searchQuery
               onSelectDebt={handleOpenDebtDetail}
               onOpenPayment={handleOpenPayment}
-              onOpenReminder={handleOpenReminder}
               onOpenAddDebt={handleOpenAddDebt}
               onDeleteDebt={handleDeleteDebt}
             />
@@ -318,7 +310,6 @@
             bind:searchQuery
             onSelectDebt={handleOpenDebtDetail}
             onOpenPayment={handleOpenPayment}
-            onOpenReminder={handleOpenReminder}
             onOpenAddDebt={handleOpenAddDebt}
             onDeleteDebt={handleDeleteDebt}
           />
@@ -381,18 +372,11 @@
     debt={activeDebt}
     onClose={() => isDebtDetailOpen = false}
     onOpenPayment={(d) => { isDebtDetailOpen = false; handleOpenPayment(d, true); }}
-    onOpenReminder={(d) => { isDebtDetailOpen = false; handleOpenReminder(d); }}
     onOpenStatement={(d) => { isDebtDetailOpen = false; handleOpenStatement(d); }}
     onUpdateAmount={handleUpdateDebtAmount}
     onDeleteDebt={handleDeleteDebt}
     onUpdatePayment={handleUpdatePayment}
     onDeletePayment={handleDeletePayment}
-  />
-
-  <ReminderModal
-    isOpen={isReminderOpen}
-    debt={activeDebt}
-    onClose={() => isReminderOpen = false}
   />
 
   <StatementModal
