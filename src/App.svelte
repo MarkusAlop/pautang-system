@@ -315,7 +315,7 @@
   }
 </script>
 
-<div class="min-h-screen flex flex-col bg-slate-50 selection:bg-emerald-500 selection:text-white">
+<div class="app-shell min-h-screen flex flex-col bg-slate-50 selection:bg-emerald-500 selection:text-white">
   
   <!-- Navigation Header -->
   <Navbar 
@@ -367,7 +367,7 @@
   {/if}
 
   <!-- Main Content Layout -->
-  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+  <main class="app-main flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
     
     {#if loading}
       <div class="p-20 text-center text-slate-400 text-sm">
@@ -375,6 +375,37 @@
         Loading Pautang Tracker...
       </div>
     {:else}
+      <section class="page-heading" aria-label="Current page">
+        <div>
+          <p class="page-eyebrow">YOUR PERSONAL LEDGER</p>
+          <h1>
+            {#if activeTab === 'dashboard'}
+              Money, made easier.
+            {:else if activeTab === 'debts'}
+              Your loan ledger
+            {:else if activeTab === 'people'}
+              People you trust
+            {:else}
+              Your data & settings
+            {/if}
+          </h1>
+          <p class="page-description">
+            {#if activeTab === 'dashboard'}
+              A clear picture of what’s lent, collected, and still to come.
+            {:else if activeTab === 'debts'}
+              Keep every loan, due date, and repayment in one place.
+            {:else if activeTab === 'people'}
+              Borrower details and their complete loan history.
+            {:else}
+              Back up, export, and manage your PautangTrack data.
+            {/if}
+          </p>
+        </div>
+        <div class="ledger-status">
+          <span class:offline={!isOnline} class="status-dot"></span>
+          {isOnline ? 'All changes up to date' : 'Offline · saved on this device'}
+        </div>
+      </section>
 
       <!-- TAB 1: DASHBOARD -->
       {#if activeTab === 'dashboard'}
@@ -467,7 +498,7 @@
   </main>
 
   <!-- Footer -->
-  <footer class="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500 no-print">
+  <footer class="app-footer border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500 no-print">
     <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
       <div class="flex flex-col items-center gap-0.5 sm:items-start">
         <div class="flex items-center gap-1">
