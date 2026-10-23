@@ -1,6 +1,7 @@
 <script>
   import { X, User, DollarSign, Calendar, FileText, AlertCircle } from 'lucide-svelte';
   import { formatAmount, handleAmountInput } from '../lib/formatters.js';
+  import { getPhilippineDateString } from '../lib/dateTime.js';
 
   export let isOpen = false;
   export let person = null;
@@ -15,7 +16,7 @@
   // Loan fields
   let amount = '';
   let reason = '';
-  let dateIncurred = getCurrentLocalDate();
+  let dateIncurred = getCurrentPhilippineDate();
   let dueDate = '';
   let notes = '';
 
@@ -23,12 +24,8 @@
   let error = '';
   let fieldErrors = {};
 
-  function getCurrentLocalDate() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+  function getCurrentPhilippineDate() {
+    return getPhilippineDateString();
   }
 
   function resetForm() {
@@ -37,7 +34,7 @@
     customPersonRelationship = '';
     amount = '';
     reason = '';
-    dateIncurred = getCurrentLocalDate();
+    dateIncurred = getCurrentPhilippineDate();
     dueDate = '';
     notes = '';
     error = '';
@@ -76,7 +73,7 @@
     if (!amount) {
       nextFieldErrors.amount = 'Enter the amount lent.';
     } else if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      nextFieldErrors.amount = 'Enter an amount greater than zero.';
+      nextFieldErrors.amount = 'Enter a valid amount.';
     }
     if (!reason.trim()) {
       nextFieldErrors.reason = 'Enter a purpose or description.';

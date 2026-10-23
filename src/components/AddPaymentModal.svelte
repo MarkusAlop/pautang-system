@@ -2,6 +2,7 @@
   import { X, CheckCircle2, DollarSign, Calendar, CreditCard, FileText, AlertCircle } from 'lucide-svelte';
   import confetti from 'canvas-confetti';
   import { formatAmount, formatCurrency, handleAmountInput } from '../lib/formatters.js';
+  import { getPhilippineDateString } from '../lib/dateTime.js';
   import { QR_PAYMENT_METHODS, getPaymentQrFilePath, loadPaymentQrs } from '../lib/paymentQrs.js';
 
   export let isOpen = false;
@@ -10,8 +11,8 @@
   export let onSubmit = async (data) => {};
 
   let amount = '';
-  let paymentDate = new Date().toISOString().split('T')[0];
-  let paymentMethod = 'GCash';
+  let paymentDate = getCurrentPhilippineDate();
+  let paymentMethod = '';
   let paymentQrs = {};
   let missingFolderQrs = {};
   let qrPreviewOpen = false;
@@ -19,11 +20,18 @@
 
   let loading = false;
   let error = '';
+  let amountError = '';
   let initializedDebtId = null;
+
+  function getCurrentPhilippineDate() {
+    return getPhilippineDateString();
+  }
 
   $: if (!isOpen) {
     initializedDebtId = null;
     qrPreviewOpen = false;
+    paymentMethod = '';
+    amountError = '';
   }
 
   $: if (isOpen) {
@@ -39,20 +47,43 @@
   $: if (debt && isOpen && initializedDebtId !== debt.id) {
     initializedDebtId = debt.id;
     amount = '';
-    paymentDate = new Date().toISOString().split('T')[0];
+    paymentMethod = '';
+    paymentDate = getCurrentPhilippineDate();
     notes = '';
     error = '';
+    amountError = '';
   }
 
   async function handleFormSubmit() {
     error = '';
+    amountError = '';
+
     const numAmount = Number(amount);
     if (!amount || isNaN(amount) || numAmount <= 0) {
-      error = 'Please enter a valid payment amount (₱).';
+      amountError = 'Enter a valid payment amount.';
       return;
     }
     if (numAmount > Number(debt.balance)) {
-      error = 'Payment amount cannot be greater than the remaining balance.';
+      amountError = 'Payment cannot exceed the remaining balance.';
+      return;
+    }
+
+    const allocations = [];
+    let unallocatedAmount = Math.round(numAmount * 100);
+    for (const loan of debt.payment_allocations || []) {
+      const loanBalance = Math.round(Number(loan.balance) * 100);
+      const allocationAmount = Math.min(unallocatedAmount, loanBalance);
+      if (allocationAmount > 0) {
+        allocations.push({
+          debt_id: loan.debt_id,
+          amount: allocationAmount / 100
+        });
+        unallocatedAmount -= allocationAmount;
+      }
+      if (unallocatedAmount === 0) break;
+    }
+    if (unallocatedAmount > 0 && debt.payment_allocations?.length) {
+      amountError = 'The borrower balance changed. Close and reopen the form to refresh it.';
       return;
     }
 
@@ -61,8 +92,9 @@
       const result = await onSubmit({
         debt_id: debt.id,
         amount: numAmount,
+        ...(allocations.length > 0 ? { allocations } : {}),
         payment_date: paymentDate,
-        payment_method: paymentMethod,
+        payment_method: paymentMethod || null,
         notes: notes ? notes.trim() : null
       });
 
@@ -108,12 +140,9 @@
       <!-- Debt Summary Card -->
       <div class="px-6 pt-5">
         <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-          <div class="flex items-center justify-between text-xs text-slate-500 mb-1">
+          <div class="flex flex-wrap items-center gap-x-1.5 text-xs text-slate-500 mb-1">
             <span>Borrower:</span>
             <span class="font-bold text-slate-800">{debt.person_name} {debt.person_nickname ? `(${debt.person_nickname})` : ''}</span>
-          </div>
-          <div class="text-xs text-slate-600 truncate mb-2">
-            Purpose: <span class="font-medium text-slate-800">{debt.reason || 'Not specified'}</span>
           </div>
           <div class="flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
             <div>
@@ -126,14 +155,14 @@
             </div>
             <div class="text-right">
               <div class="text-[11px] text-slate-500">Remaining Balance</div>
-              <div class="font-mono font-extrabold text-sm text-emerald-700">{formatCurrency(debt.balance)}</div>
+              <div class="font-mono font-extrabold text-sm text-red-700">{formatCurrency(debt.balance)}</div>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Payment Form -->
-      <form on:submit|preventDefault={handleFormSubmit} class="p-6 space-y-4">
+      <form novalidate on:submit|preventDefault={handleFormSubmit} class="p-6 space-y-4">
         
         {#if error}
           <div class="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
@@ -144,30 +173,43 @@
 
         <!-- 1. Payment Amount -->
         <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-            Payment Amount (PHP ₱)
+          <label for="repayment-amount" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            Payment Amount (PHP ₱) <span class="text-rose-600">*</span>
           </label>
           <div class="relative">
             <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-base">₱</span>
             <input
+              id="repayment-amount"
               type="text"
               inputmode="decimal"
               value={formatAmount(amount)}
-              on:input={(event) => handleAmountInput(event, (value) => amount = value)}
+              on:input={(event) => handleAmountInput(event, (value) => {
+                amount = value;
+                amountError = '';
+              })}
+              required
               placeholder="0.00"
-              class="payment-amount-input w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold font-mono focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:outline-none"
+              aria-invalid={Boolean(amountError)}
+              aria-describedby={amountError ? 'repayment-amount-error' : undefined}
+              class={`payment-amount-input w-full pl-9 pr-4 py-2.5 bg-slate-50 border rounded-xl text-lg font-bold font-mono focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:outline-none ${amountError ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}
             />
           </div>
+          {#if amountError}
+            <p id="repayment-amount-error" class="mt-1 text-xs text-red-600" role="alert">{amountError}</p>
+          {/if}
         </div>
 
-        <!-- 2. Payment Method -->
+        <!-- 2. E-Wallet QR -->
         <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Payment Method</label>
+          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">E-Wallet QR (Optional)</label>
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
             {#each QR_PAYMENT_METHODS as method}
               <button
                 type="button"
-                on:click={() => { paymentMethod = method; qrPreviewOpen = false; }}
+                on:click={() => {
+                  paymentMethod = method;
+                  qrPreviewOpen = false;
+                }}
                 class={`py-2 px-2 rounded-xl border text-center transition-all ${
                   paymentMethod === method
                     ? 'border-blue-600 bg-blue-50 text-blue-900 font-bold'
@@ -179,7 +221,6 @@
               </button>
             {/each}
           </div>
-
           {#if QR_PAYMENT_METHODS.includes(paymentMethod)}
             {#if qrImage}
               <div class="mt-3 p-3 border border-slate-200 rounded-xl text-center">

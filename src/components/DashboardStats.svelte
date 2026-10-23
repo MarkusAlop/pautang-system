@@ -52,7 +52,7 @@
     <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
       <div class="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-bl-full -mr-4 -mt-4 transition-all"></div>
       <div class="flex items-center justify-between mb-3">
-        <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Total Outstanding</span>
+        <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Total Current Utang</span>
         <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
           <ArrowDownLeft class="w-4 h-4 stroke-[2.5]" />
         </div>
@@ -63,11 +63,11 @@
       <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-700">
         <span>Active Borrowers:</span>
         <span class="font-bold text-slate-900">
-          {stats.active_borrowers_count} {stats.active_borrowers_count === 1 ? 'person' : 'people'}
+          {stats.active_borrowers_count} {stats.active_borrowers_count === 1 ? 'person' : 'persons'}
         </span>
       </div>
       <div class="mt-1 text-[11px] text-slate-500">
-        Total unpaid money currently lent out
+        Total owed to me
       </div>
     </div>
 
@@ -109,7 +109,7 @@
         <span class="font-bold text-slate-900">{stats.total_loans_count} loans</span>
       </div>
       <div class="mt-1 text-[11px] text-slate-500">
-        Cumulative principal lent out to date
+        Total amount of money I have lent to borrowers
       </div>
     </div>
 

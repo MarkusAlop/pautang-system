@@ -1,3 +1,5 @@
+import { getPhilippineDateString, PHILIPPINES_TIME_ZONE } from './dateTime.js';
+
 export function formatCurrency(amount) {
   const num = Number(amount) || 0;
   return new Intl.NumberFormat('en-PH', {
@@ -44,21 +46,16 @@ export function handleAmountInput(event, onValueChange) {
 export function formatDate(dateString) {
   if (!dateString) return '-';
   try {
-    const parts = dateString.split('T')[0].split('-');
-    if (parts.length === 3) {
-      const date = new Date(parts[0], parts[1] - 1, parts[2]);
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric'
-      });
-    }
-    return new Date(dateString).toLocaleDateString('en-US', {
+    const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(dateString);
+    const date = new Date(dateOnly ? `${dateString}T00:00:00+08:00` : dateString);
+    if (Number.isNaN(date.getTime())) return dateString;
+    return date.toLocaleDateString('en-PH', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric'
+      year: 'numeric',
+      timeZone: PHILIPPINES_TIME_ZONE
     });
-  } catch (e) {
+  } catch {
     return dateString;
   }
 }
@@ -73,21 +70,19 @@ export function formatDateTime(dateTimeString) {
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-    second: '2-digit'
+    second: '2-digit',
+    timeZone: PHILIPPINES_TIME_ZONE
   });
 }
 
 export function getDueDateStatus(dueDateStr, isPaid = false) {
   if (!dueDateStr || isPaid) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const parts = dueDateStr.split('-');
-  const due = new Date(parts[0], parts[1] - 1, parts[2]);
-  due.setHours(0, 0, 0, 0);
-
-  const diffTime = due.getTime() - today.getTime();
-  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  const today = getPhilippineDateString();
+  const [todayYear, todayMonth, todayDay] = today.split('-').map(Number);
+  const [dueYear, dueMonth, dueDay] = dueDateStr.split('-').map(Number);
+  const todayDayNumber = Date.UTC(todayYear, todayMonth - 1, todayDay);
+  const dueDayNumber = Date.UTC(dueYear, dueMonth - 1, dueDay);
+  const diffDays = Math.round((dueDayNumber - todayDayNumber) / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) {
     return {

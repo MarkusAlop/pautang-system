@@ -41,7 +41,7 @@
     const totalPaid = Number(debt.total_paid) || 0;
 
     if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
-      amountError = 'Enter a valid amount greater than zero.';
+      amountError = 'Enter a valid amount.';
       return;
     }
 
@@ -76,7 +76,7 @@
   async function savePaymentAmount(payment) {
     const nextAmount = Number(editedPaymentAmount);
     if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
-      paymentAmountError = 'Enter a valid amount greater than zero.';
+      paymentAmountError = 'Enter a valid amount.';
       return;
     }
 
@@ -198,11 +198,11 @@
           </div>
 
           <div class={`rounded-2xl p-3.5 border ${
-            debt.balance > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-100 border-slate-200'
+            debt.balance > 0 ? 'bg-red-50 border-red-200' : 'bg-slate-100 border-slate-200'
           }`}>
             <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Remaining Balance</span>
             <span class={`text-xl font-extrabold font-mono ${
-              debt.balance > 0 ? 'text-emerald-700' : 'text-slate-500 line-through'
+              debt.balance > 0 ? 'text-red-700' : 'text-slate-500 line-through'
             }`}>
               {formatCurrency(debt.balance)}
             </span>

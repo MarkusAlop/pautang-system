@@ -1,4 +1,5 @@
 import { query, queryOne, run, saveDb } from './db.js';
+import { addDaysToDateString, getPhilippineDateString } from '../src/lib/dateTime.js';
 
 export function setupApiRoutes(router) {
   const replayOperation = (req, res) => {
@@ -30,7 +31,7 @@ export function setupApiRoutes(router) {
 
   // Helper to calculate loan status and remaining balance
   const enrichLoan = (debt) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getPhilippineDateString();
     const totalPaid = Number(debt.total_paid || 0);
     const amount = Number(debt.amount || 0);
     const balance = Math.max(0, amount - totalPaid);
@@ -62,7 +63,7 @@ export function setupApiRoutes(router) {
   // 1. GET /api/stats (Pautang-only statistics)
   router.get('/api/stats', (req, res) => {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getPhilippineDateString();
       const currentMonthPrefix = today.substring(0, 7); // YYYY-MM
 
       const loans = query(`
@@ -373,7 +374,7 @@ export function setupApiRoutes(router) {
   router.post('/api/payments', (req, res) => {
     try {
       if (replayOperation(req, res)) return;
-      const { debt_id, amount, payment_date, payment_method, reference_no, notes, client_created_at } = req.body;
+      const { debt_id, amount, allocations, payment_date, payment_method, reference_no, notes, client_created_at } = req.body;
       if (!debt_id) return res.status(400).json({ error: 'Loan ID is required' });
       if (!amount || isNaN(amount) || Number(amount) <= 0) {
         return res.status(400).json({ error: 'Valid payment amount is required' });
@@ -384,7 +385,109 @@ export function setupApiRoutes(router) {
 
       const now = new Date().toISOString();
       const createdAt = getClientCreatedAt(client_created_at);
-      const pDate = payment_date || createdAt.split('T')[0];
+      const pDate = payment_date || getPhilippineDateString();
+
+      if (Array.isArray(allocations)) {
+        const normalizedAllocations = allocations.map((allocation) => ({
+          debtId: Number(allocation.debt_id),
+          amount: Number(allocation.amount)
+        }));
+        const amountInCents = Math.round(Number(amount) * 100);
+        const allocationTotalInCents = normalizedAllocations.reduce(
+          (total, allocation) => total + Math.round(allocation.amount * 100),
+          0
+        );
+        const allocationDebtIds = normalizedAllocations.map((allocation) => allocation.debtId);
+        if (
+          normalizedAllocations.length === 0 ||
+          normalizedAllocations.some((allocation) =>
+            !Number.isInteger(allocation.debtId) ||
+            !Number.isFinite(allocation.amount) ||
+            allocation.amount <= 0
+          ) ||
+          new Set(allocationDebtIds).size !== allocationDebtIds.length ||
+          allocationTotalInCents !== amountInCents
+        ) {
+          return res.status(400).json({ error: 'Payment allocations must add up to the payment amount.' });
+        }
+
+        const allocationDebts = normalizedAllocations.map((allocation) => {
+          const loan = queryOne(`
+            SELECT d.*,
+                   COALESCE((SELECT SUM(amount) FROM payments WHERE debt_id = d.id), 0) as total_paid
+            FROM debts d
+            WHERE d.id = ?
+          `, [allocation.debtId]);
+          if (!loan || loan.person_id !== debt.person_id) {
+            return { ...allocation, loan: null };
+          }
+          return { ...allocation, loan };
+        });
+
+        if (allocationDebts.some((allocation) => !allocation.loan)) {
+          return res.status(400).json({ error: 'All repayment allocations must belong to the same borrower.' });
+        }
+        if (allocationDebts.some((allocation) =>
+          allocation.loan.status === 'forgiven' ||
+          allocation.amount > Math.max(0, Number(allocation.loan.amount) - Number(allocation.loan.total_paid)) + 0.005
+        )) {
+          return res.status(400).json({ error: 'A repayment allocation exceeds a loan’s remaining balance.' });
+        }
+
+        const createdPayments = [];
+        for (const allocation of allocationDebts) {
+          const result = run(`
+            INSERT INTO payments (debt_id, amount, payment_date, payment_method, reference_no, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `, [
+            allocation.debtId,
+            allocation.amount,
+            pDate,
+            payment_method || 'Cash',
+            reference_no ? reference_no.trim() : null,
+            notes ? notes.trim() : null,
+            createdAt
+          ]);
+          createdPayments.push(queryOne(`SELECT * FROM payments WHERE id = ?`, [result.lastInsertRowid]));
+        }
+
+        for (const { debtId } of allocationDebts) {
+          const totalPaidRow = queryOne(
+            `SELECT SUM(amount) as total FROM payments WHERE debt_id = ?`,
+            [debtId]
+          );
+          const totalPaid = Number(totalPaidRow?.total || 0);
+          const loan = allocationDebts.find((allocation) => allocation.debtId === debtId).loan;
+          if (totalPaid >= Number(loan.amount) && loan.status !== 'forgiven') {
+            run(`UPDATE debts SET status = 'paid', updated_at = ? WHERE id = ?`, [now, debtId]);
+          } else if (totalPaid < Number(loan.amount) && loan.status === 'paid') {
+            run(`UPDATE debts SET status = 'active', updated_at = ? WHERE id = ?`, [now, debtId]);
+          }
+        }
+
+        const updatedDebts = allocationDebts.map(({ debtId }) => enrichLoan(queryOne(`
+          SELECT d.*,
+                 COALESCE((SELECT SUM(amount) FROM payments WHERE debt_id = d.id), 0) as total_paid
+          FROM debts d WHERE d.id = ?
+        `, [debtId])));
+        const personDebts = query(`
+          SELECT d.amount, d.status,
+                 COALESCE((SELECT SUM(amount) FROM payments WHERE debt_id = d.id), 0) as total_paid
+          FROM debts d
+          WHERE d.person_id = ? AND (d.type = 'lent' OR d.type IS NULL)
+        `, [debt.person_id]);
+        const remainingBalance = personDebts.reduce((total, loan) =>
+          total + (loan.status === 'forgiven' ? 0 : Math.max(0, Number(loan.amount) - Number(loan.total_paid))), 0);
+        const responseBody = {
+          payment: createdPayments[0],
+          payments: createdPayments,
+          debt: updatedDebts[0],
+          debts: updatedDebts,
+          is_settled: remainingBalance <= 0
+        };
+        rememberOperation(req, 201, responseBody);
+        return res.status(201).json(responseBody);
+      }
 
       const pResult = run(`
         INSERT INTO payments (debt_id, amount, payment_date, payment_method, reference_no, notes, created_at)
@@ -665,17 +768,9 @@ export function setupApiRoutes(router) {
       run(`DELETE FROM people`);
 
       const now = new Date();
-      const daysAgo = (days) => {
-        const d = new Date();
-        d.setDate(d.getDate() - days);
-        return d.toISOString().split('T')[0];
-      };
-
-      const daysAhead = (days) => {
-        const d = new Date();
-        d.setDate(d.getDate() + days);
-        return d.toISOString().split('T')[0];
-      };
+      const today = getPhilippineDateString(now);
+      const daysAgo = (days) => addDaysToDateString(today, -days);
+      const daysAhead = (days) => addDaysToDateString(today, days);
 
       // 1. Kuya Jun (Brother - Family)
       const p1 = run(`INSERT INTO people (name, nickname, relationship, phone, notes, created_at)

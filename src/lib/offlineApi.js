@@ -1,4 +1,5 @@
 import { offlineGet, offlineGetAll, offlineRemove, offlineSet, offlineUpdate } from './offlineStore.js';
+import { getPhilippineDateString } from './dateTime.js';
 
 const CACHE_PREFIX = 'api:';
 const OUTBOX_KEY = 'offline:outbox';
@@ -188,7 +189,7 @@ async function queueOfflineDebt(data) {
     type: 'lent',
     amount,
     reason: typeof data.reason === 'string' ? data.reason.trim() : '',
-    date_incurred: data.date_incurred || createdAt.slice(0, 10),
+    date_incurred: data.date_incurred || getPhilippineDateString(),
     due_date: data.due_date || null,
     notes: data.notes || null,
     status: 'active',
@@ -217,6 +218,65 @@ async function queueOfflineDebt(data) {
 }
 
 async function queueOfflinePayment(data) {
+  if (Array.isArray(data.allocations)) {
+    const allocations = data.allocations.map((allocation) => ({
+      debt_id: Number(allocation.debt_id),
+      amount: Number(allocation.amount)
+    }));
+    const requestedCents = Math.round(Number(data.amount) * 100);
+    const allocatedCents = allocations.reduce((total, allocation) =>
+      total + Math.round(allocation.amount * 100), 0);
+    const cachedDebts = await getCachedDebts();
+    const allocationDebts = allocations.map((allocation) => ({
+      ...allocation,
+      debt: cachedDebts.find((entry) => Number(entry.id) === allocation.debt_id)
+    }));
+
+    if (
+      allocations.length === 0 ||
+      allocations.some((allocation) =>
+        !Number.isInteger(allocation.debt_id) ||
+        !Number.isFinite(allocation.amount) ||
+        allocation.amount <= 0
+      ) ||
+      allocatedCents !== requestedCents
+    ) {
+      throw new Error('Payment allocations must add up to the payment amount.');
+    }
+    if (allocationDebts.some(({ debt }) => !debt)) {
+      throw new Error('A loan in this borrower’s repayment is not saved on this device yet.');
+    }
+    const personId = Number(allocationDebts[0].debt.person_id);
+    if (allocationDebts.some(({ debt, amount }) =>
+      Number(debt.person_id) !== personId ||
+      debt.status === 'forgiven' ||
+      amount > Math.max(0, Number(debt.balance) || 0) + 0.005
+    )) {
+      throw new Error('The borrower’s loan balance changed. Refresh the loan list and try again.');
+    }
+
+    const results = [];
+    for (const allocation of allocationDebts) {
+      results.push(await queueOfflinePayment({
+        ...data,
+        debt_id: allocation.debt_id,
+        amount: allocation.amount,
+        allocations: undefined
+      }));
+    }
+    const nextDebts = await getCachedDebts();
+    const remainingBalance = nextDebts
+      .filter((debt) => Number(debt.person_id) === personId && debt.status !== 'forgiven')
+      .reduce((total, debt) => total + (Number(debt.balance) || 0), 0);
+    return {
+      payment: results[0].payment,
+      payments: results.map((result) => result.payment),
+      debt: results[0].debt,
+      is_settled: remainingBalance <= 0,
+      offline: true
+    };
+  }
+
   const amount = Number(data.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Valid payment amount is required.');
   const debtId = Number(data.debt_id);
@@ -231,8 +291,8 @@ async function queueOfflinePayment(data) {
     id: paymentId,
     debt_id: debtId,
     amount,
-    payment_date: data.payment_date || createdAt.slice(0, 10),
-    payment_method: data.payment_method || 'GCash',
+    payment_date: data.payment_date || getPhilippineDateString(),
+    payment_method: data.payment_method || 'Cash',
     reference_no: data.reference_no || null,
     notes: data.notes || null,
     created_at: createdAt
@@ -261,7 +321,7 @@ async function queueOfflinePayment(data) {
   const people = await updatePersonCache(debt.person_id, nextDebts, payment);
   const previousStats = await offlineGet(cacheKey('/api/stats')) || { ...EMPTY_STATS };
   const stats = summarizeStats(nextDebts, people, previousStats);
-  if (payment.payment_date.slice(0, 7) === createdAt.slice(0, 7)) {
+  if (payment.payment_date.slice(0, 7) === getPhilippineDateString().slice(0, 7)) {
     stats.collected_this_month = (Number(previousStats.collected_this_month) || 0) + amount;
   }
   await offlineSet(cacheKey('/api/stats'), stats);

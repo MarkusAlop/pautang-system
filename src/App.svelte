@@ -16,7 +16,7 @@
 
   // Navigation State
   let activeTab = 'dashboard'; // 'dashboard', 'debts', 'people', 'settings'
-  let filterStatus = 'all';
+  let filterStatus = 'active';
   let searchQuery = '';
 
   // Data States
@@ -51,7 +51,7 @@
 
   let activeDebt = null;
   let activePerson = null;
-  let reopenDebtAfterPayment = false;
+  let openPersonHistoryAfterPayment = false;
 
   function showToast(message, type = 'success') {
     toast = { message, type };
@@ -184,6 +184,15 @@
     isAddDebtOpen = true;
   }
 
+  function handleOpenLoanForDebt(debt) {
+    activePerson = {
+      id: debt.person_id,
+      name: debt.person_name,
+      relationship: debt.person_relationship
+    };
+    isAddDebtOpen = true;
+  }
+
   async function handleCreateDebt(data) {
     const borrowerName = activePerson?.name;
     await api.createDebt(data);
@@ -215,26 +224,37 @@
     }
   }
 
-  function handleOpenPayment(debt, reopenDebtAfter = false) {
+  function handleOpenPayment(debt) {
     activeDebt = debt;
-    reopenDebtAfterPayment = reopenDebtAfter;
     isAddPaymentOpen = true;
   }
 
   async function handleRecordPayment(paymentData) {
     const res = await api.createPayment(paymentData);
     await refreshData();
-    if (reopenDebtAfterPayment) {
-      activeDebt = await api.getDebt(paymentData.debt_id);
-      isDebtDetailOpen = true;
-      reopenDebtAfterPayment = false;
+    let historyRefreshError = '';
+    if (activeDebt?.person_id) {
+      try {
+        activePerson = await api.getPerson(activeDebt.person_id);
+        openPersonHistoryAfterPayment = true;
+      } catch (error) {
+        historyRefreshError = `Repayment recorded, but transaction history could not be refreshed: ${error.message}`;
+      }
     }
-    showToast(
-      res.is_settled 
-        ? 'Great! This loan has been fully settled! 🎉' 
+    showToast(historyRefreshError || (
+      res.is_settled
+        ? 'Great! This loan has been fully settled! 🎉'
         : 'Payment successfully recorded!'
-    );
+    ), historyRefreshError ? 'error' : 'success');
     return res;
+  }
+
+  function handleClosePayment() {
+    isAddPaymentOpen = false;
+    if (openPersonHistoryAfterPayment) {
+      openPersonHistoryAfterPayment = false;
+      isPersonDetailOpen = true;
+    }
   }
 
   function handleOpenStatement(debt) {
@@ -284,6 +304,10 @@
     }
   }
 
+  function handleOpenBorrowerHistory(debt) {
+    void handleSelectPerson({ id: debt.person_id });
+  }
+
   function handleAddDebtForPerson(person) {
     activePerson = person;
     isPersonDetailOpen = false;
@@ -327,7 +351,7 @@
     onTabChange={(tab) => {
       activeTab = tab;
       if (tab === 'debts') {
-        filterStatus = 'all';
+        filterStatus = 'active';
       }
     }}
   />
@@ -450,8 +474,9 @@
               {debts}
               bind:filterStatus
               bind:searchQuery
-              onSelectDebt={handleOpenDebtDetail}
+              onSelectBorrower={handleOpenBorrowerHistory}
               onOpenPayment={handleOpenPayment}
+              onOpenLoan={handleOpenLoanForDebt}
               onOpenAddDebt={handleOpenAddDebt}
               onDeleteDebt={handleDeleteDebt}
             />
@@ -466,8 +491,9 @@
             {debts}
             bind:filterStatus
             bind:searchQuery
-            onSelectDebt={handleOpenDebtDetail}
+            onSelectBorrower={handleOpenBorrowerHistory}
             onOpenPayment={handleOpenPayment}
+            onOpenLoan={handleOpenLoanForDebt}
             onOpenAddDebt={handleOpenAddDebt}
             onDeleteDebt={handleDeleteDebt}
           />
@@ -524,7 +550,7 @@
   <AddPaymentModal
     isOpen={isAddPaymentOpen}
     debt={activeDebt}
-    onClose={() => isAddPaymentOpen = false}
+    onClose={handleClosePayment}
     onSubmit={handleRecordPayment}
   />
 
@@ -532,7 +558,7 @@
     isOpen={isDebtDetailOpen}
     debt={activeDebt}
     onClose={() => isDebtDetailOpen = false}
-    onOpenPayment={(d) => { isDebtDetailOpen = false; handleOpenPayment(d, true); }}
+    onOpenPayment={(d) => { isDebtDetailOpen = false; handleOpenPayment(d); }}
     onOpenStatement={(d) => { isDebtDetailOpen = false; handleOpenStatement(d); }}
     onUpdateAmount={handleUpdateDebtAmount}
     onDeleteDebt={handleDeleteDebt}
@@ -550,8 +576,6 @@
     isOpen={isPersonDetailOpen}
     person={activePerson}
     onClose={() => isPersonDetailOpen = false}
-    onSelectDebt={(d) => { isPersonDetailOpen = false; handleOpenDebtDetail(d); }}
-    onAddDebtForPerson={handleAddDebtForPerson}
     onDeletePerson={handleDeletePerson}
   />
 
