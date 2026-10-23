@@ -1,7 +1,7 @@
 <script>
   import { X, CheckCircle2, DollarSign, Calendar, CreditCard, FileText, AlertCircle } from 'lucide-svelte';
   import confetti from 'canvas-confetti';
-  import { formatCurrency } from '../lib/formatters.js';
+  import { formatAmount, formatCurrency, handleAmountInput } from '../lib/formatters.js';
   import { QR_PAYMENT_METHODS, getPaymentQrFilePath, loadPaymentQrs } from '../lib/paymentQrs.js';
 
   export let isOpen = false;
@@ -15,7 +15,6 @@
   let paymentQrs = {};
   let missingFolderQrs = {};
   let qrPreviewOpen = false;
-  let referenceNo = '';
   let notes = '';
 
   let loading = false;
@@ -39,9 +38,8 @@
 
   $: if (debt && isOpen && initializedDebtId !== debt.id) {
     initializedDebtId = debt.id;
-    amount = debt.balance > 0 ? debt.balance : '';
+    amount = '';
     paymentDate = new Date().toISOString().split('T')[0];
-    referenceNo = '';
     notes = '';
     error = '';
   }
@@ -53,6 +51,10 @@
       error = 'Please enter a valid payment amount (₱).';
       return;
     }
+    if (numAmount > Number(debt.balance)) {
+      error = 'Payment amount cannot be greater than the remaining balance.';
+      return;
+    }
 
     loading = true;
     try {
@@ -61,7 +63,6 @@
         amount: numAmount,
         payment_date: paymentDate,
         payment_method: paymentMethod,
-        reference_no: referenceNo ? referenceNo.trim() : null,
         notes: notes ? notes.trim() : null
       });
 
@@ -149,13 +150,12 @@
           <div class="relative">
             <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-base">₱</span>
             <input
-              type="number"
-              step="any"
-              min="1"
-              max={debt.balance}
-              bind:value={amount}
+              type="text"
+              inputmode="decimal"
+              value={formatAmount(amount)}
+              on:input={(event) => handleAmountInput(event, (value) => amount = value)}
               placeholder="0.00"
-              class="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold font-mono focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:outline-none"
+              class="payment-amount-input w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold font-mono focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:outline-none"
             />
           </div>
         </div>
@@ -207,20 +207,7 @@
           />
         </div>
 
-        <!-- 4. Reference Number -->
-        <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-            Reference / Transaction ID (Optional)
-          </label>
-          <input
-            type="text"
-            bind:value={referenceNo}
-            placeholder="Enter the payment reference number"
-            class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:bg-white focus:outline-none"
-          />
-        </div>
-
-        <!-- 5. Notes -->
+        <!-- 4. Notes -->
         <div>
           <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Notes / Remarks (Optional)</label>
           <input

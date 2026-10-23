@@ -16,10 +16,12 @@
   // Add borrower form state
   let newName = '';
   let newNickname = '';
-  let newRelationship = 'Friend';
+  let newRelationship = '';
+  let customRelationship = '';
   let newPhone = '';
   let newNotes = '';
   let formError = '';
+  let fieldErrors = {};
   let formLoading = false;
 
   $: filteredPeople = people.filter(p => {
@@ -33,10 +35,44 @@
     );
   });
 
+  function resetAddPersonForm() {
+    newName = '';
+    newNickname = '';
+    newRelationship = '';
+    customRelationship = '';
+    newPhone = '';
+    newNotes = '';
+    formError = '';
+    fieldErrors = {};
+  }
+
+  function clearFieldError(field) {
+    if (!fieldErrors[field]) return;
+    const nextErrors = { ...fieldErrors };
+    delete nextErrors[field];
+    fieldErrors = nextErrors;
+  }
+
+  function closeAddPersonForm() {
+    resetAddPersonForm();
+    isAddPersonModalOpen = false;
+  }
+
   async function handleAddPersonSubmit() {
     formError = '';
+    fieldErrors = {};
+    const nextFieldErrors = {};
     if (!newName.trim()) {
-      formError = 'Please enter the borrower\'s full name.';
+      nextFieldErrors.newName = 'Enter the borrower name.';
+    }
+    if (!newRelationship) {
+      nextFieldErrors.newRelationship = 'Select a relationship.';
+    }
+    if (newRelationship === 'Other' && !customRelationship.trim()) {
+      nextFieldErrors.customRelationship = 'Enter the other relationship.';
+    }
+    fieldErrors = nextFieldErrors;
+    if (Object.keys(nextFieldErrors).length > 0) {
       return;
     }
 
@@ -45,17 +81,12 @@
       await onSavePerson({
         name: newName.trim(),
         nickname: newNickname ? newNickname.trim() : null,
-        relationship: newRelationship,
+        relationship: newRelationship === 'Other' ? customRelationship.trim() : newRelationship,
         phone: newPhone ? newPhone.trim() : null,
         notes: newNotes ? newNotes.trim() : null
       });
 
-      newName = '';
-      newNickname = '';
-      newRelationship = 'Friend';
-      newPhone = '';
-      newNotes = '';
-      isAddPersonModalOpen = false;
+      closeAddPersonForm();
     } catch (e) {
       formError = e.message || 'An error occurred while saving.';
     } finally {
@@ -69,7 +100,7 @@
   <!-- Header Bar -->
   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm">
     <div>
-      <h2 class="text-lg font-bold text-slate-900 tracking-tight">Borrowers Directory (Contacts)</h2>
+      <h2 class="text-lg font-bold text-slate-900 tracking-tight">Borrower Directory</h2>
       <p class="text-xs text-slate-500">Directory of family, friends, and contacts who have active or past loans.</p>
     </div>
 
@@ -205,28 +236,36 @@
           <p class="text-xs text-slate-500">Save to your contacts list for easy loan logging.</p>
         </div>
         <button
-          on:click={() => isAddPersonModalOpen = false}
+          on:click={closeAddPersonForm}
           class="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/60"
         >
           <X class="w-5 h-5" />
         </button>
       </div>
 
-      <form on:submit|preventDefault={handleAddPersonSubmit} class="p-6 space-y-4">
+      <form novalidate on:submit|preventDefault={handleAddPersonSubmit} class="p-6 space-y-4">
         {#if formError}
-          <div class="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+          <div role="alert" aria-live="assertive" class="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
             {formError}
           </div>
         {/if}
 
         <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Full Name *</label>
+          <label for="new-borrower-name" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Full Name *</label>
           <input
+            id="new-borrower-name"
             type="text"
             bind:value={newName}
+            on:input={() => clearFieldError('newName')}
+            required
             placeholder="e.g. John Doe"
-            class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+            aria-invalid={Boolean(fieldErrors.newName)}
+            aria-describedby={fieldErrors.newName ? 'new-borrower-name-error' : undefined}
+            class={`w-full px-3.5 py-2 bg-slate-50 border rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none ${fieldErrors.newName ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}
           />
+          {#if fieldErrors.newName}
+            <p id="new-borrower-name-error" class="mt-1 text-xs text-red-600" role="alert">{fieldErrors.newName}</p>
+          {/if}
         </div>
 
         <div class="grid grid-cols-2 gap-3">
@@ -241,18 +280,45 @@
           </div>
 
           <div>
-            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Relationship</label>
+            <label for="new-borrower-relationship" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+              Relationship *
+            </label>
             <select
+              id="new-borrower-relationship"
               bind:value={newRelationship}
-              class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              on:change={() => {
+                clearFieldError('newRelationship');
+                clearFieldError('customRelationship');
+              }}
+              required
+              aria-invalid={Boolean(fieldErrors.newRelationship)}
+              aria-describedby={fieldErrors.newRelationship ? 'new-borrower-relationship-error' : undefined}
+              class={`w-full px-3.5 py-2 bg-slate-50 border rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none ${fieldErrors.newRelationship ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}
             >
-              <option value="Family">Family</option>
+              <option value="" disabled>Select a relationship</option>
+              <option value="Family member">Family member</option>
               <option value="Friend">Friend</option>
-              <option value="Colleague">Colleague / Work</option>
-              <option value="Customer">Customer / Client</option>
-              <option value="Neighbor">Neighbor</option>
+              <option value="Relative">Relative</option>
               <option value="Other">Other</option>
             </select>
+            {#if fieldErrors.newRelationship}
+              <p id="new-borrower-relationship-error" class="mt-1 text-xs text-red-600" role="alert">{fieldErrors.newRelationship}</p>
+            {/if}
+            {#if newRelationship === 'Other'}
+              <input
+                type="text"
+                bind:value={customRelationship}
+                on:input={() => clearFieldError('customRelationship')}
+                required
+                placeholder="Other relationship"
+                aria-invalid={Boolean(fieldErrors.customRelationship)}
+                aria-describedby={fieldErrors.customRelationship ? 'new-borrower-custom-relationship-error' : undefined}
+                class={`custom-relationship-input mt-2 w-full px-3.5 py-2 bg-slate-50 border rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none ${fieldErrors.customRelationship ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}
+              />
+              {#if fieldErrors.customRelationship}
+                <p id="new-borrower-custom-relationship-error" class="mt-1 text-xs text-red-600" role="alert">{fieldErrors.customRelationship}</p>
+              {/if}
+            {/if}
           </div>
         </div>
 
@@ -279,7 +345,7 @@
         <div class="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
           <button
             type="button"
-            on:click={() => isAddPersonModalOpen = false}
+            on:click={closeAddPersonForm}
             class="px-4 py-2 text-slate-600 hover:text-slate-800 text-xs font-semibold rounded-xl"
           >
             Cancel

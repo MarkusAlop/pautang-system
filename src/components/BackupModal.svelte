@@ -1,6 +1,6 @@
 <script>
   import { 
-    Download, Database, Sparkles, Trash2, RefreshCw, 
+    Download, Database, Trash2, RefreshCw,
     CheckCircle2, AlertTriangle, FileSpreadsheet, ShieldAlert, Upload
   } from 'lucide-svelte';
   import { api } from '../lib/api.js';
@@ -89,21 +89,6 @@
     qrError = '';
   }
 
-  async function handleSeedDemo() {
-    message = '';
-    error = '';
-    loading = true;
-    try {
-      await api.seedDemo();
-      message = 'Sample pautang records successfully loaded!';
-      await onRefresh();
-    } catch (e) {
-      error = e.message || 'An error occurred while seeding sample data.';
-    } finally {
-      loading = false;
-    }
-  }
-
   async function handleResetData() {
     message = '';
     error = '';
@@ -125,7 +110,7 @@
   
   <div>
     <h2 class="text-lg font-bold text-slate-900 tracking-tight">Data Management & Export</h2>
-    <p class="text-xs text-slate-500">Export your loan ledger to Excel/CSV, inspect the SQLite database, or load sample data.</p>
+    <p class="text-xs text-slate-500">Export your loan ledger to Excel/CSV or manage your local database.</p>
   </div>
 
   {#if message}
@@ -166,29 +151,7 @@
       </a>
     </div>
 
-    <!-- 2. Seed Sample Demo Data -->
-    <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
-      <div>
-        <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4">
-          <Sparkles class="w-5 h-5" />
-        </div>
-        <h3 class="text-sm font-bold text-slate-900 mb-1">Load Sample Pautang Data</h3>
-        <p class="text-xs text-slate-500 mb-4">
-          Want to test all features? Load realistic sample loan records with partial payments, overdue tracking, and active borrowers.
-        </p>
-      </div>
-
-      <button
-        on:click={handleSeedDemo}
-        disabled={loading}
-        class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-sm transition-all"
-      >
-        <Sparkles class="w-4 h-4" />
-        <span>{loading ? 'Loading...' : 'Load Sample Data'}</span>
-      </button>
-    </div>
-
-    <!-- 3. SQLite Database Storage Info -->
+    <!-- 2. SQLite Database Storage Info -->
     <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
       <div class="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-4">
         <Database class="w-5 h-5" />
@@ -205,7 +168,7 @@
       </p>
     </div>
 
-    <!-- 4. Danger Zone: Reset All Data -->
+    <!-- 3. Danger Zone: Reset All Data -->
     <div class="bg-white rounded-2xl border border-rose-200 p-6 shadow-sm flex flex-col justify-between">
       <div>
         <div class="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4">

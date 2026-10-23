@@ -8,6 +8,39 @@ export function formatCurrency(amount) {
   }).format(num);
 }
 
+function normalizeAmount(value) {
+  const input = String(value ?? '').replace(/,/g, '').replace(/[^\d.]/g, '');
+  const decimalIndex = input.indexOf('.');
+  if (decimalIndex === -1) return input;
+  return `${input.slice(0, decimalIndex + 1)}${input.slice(decimalIndex + 1).replace(/\./g, '')}`;
+}
+
+export function formatAmount(value) {
+  const normalized = normalizeAmount(value);
+  const [integer, fraction] = normalized.split('.');
+  const groupedInteger = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return fraction === undefined ? groupedInteger : `${groupedInteger}.${fraction}`;
+}
+
+export function handleAmountInput(event, onValueChange) {
+  const input = event.currentTarget;
+  const cursor = input.selectionStart ?? input.value.length;
+  const valueBeforeCursor = normalizeAmount(input.value.slice(0, cursor));
+  const normalized = normalizeAmount(input.value);
+  const formatted = formatAmount(normalized);
+  let formattedCursor = 0;
+  let normalizedChars = 0;
+
+  while (formattedCursor < formatted.length && normalizedChars < valueBeforeCursor.length) {
+    if (formatted[formattedCursor] !== ',') normalizedChars += 1;
+    formattedCursor += 1;
+  }
+
+  onValueChange(normalized);
+  input.value = formatted;
+  input.setSelectionRange(formattedCursor, formattedCursor);
+}
+
 export function formatDate(dateString) {
   if (!dateString) return '-';
   try {
@@ -93,6 +126,8 @@ export function getRelationshipBadge(rel) {
   const r = (rel || '').toLowerCase();
   switch (r) {
     case 'family':
+    case 'family member':
+    case 'relative':
       return 'bg-purple-50 text-purple-700 border-purple-200';
     case 'friend':
       return 'bg-blue-50 text-blue-700 border-blue-200';

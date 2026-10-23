@@ -3,7 +3,7 @@
     X, Plus, FileText, Trash2, Calendar, 
     ArrowDownLeft, CheckCircle2, AlertCircle, Phone, Printer, Pencil, Check
   } from 'lucide-svelte';
-  import { formatCurrency, formatDate, formatDateTime, getDueDateStatus, getRelationshipBadge } from '../lib/formatters.js';
+  import { formatAmount, formatCurrency, formatDate, formatDateTime, getDueDateStatus, getRelationshipBadge, handleAmountInput } from '../lib/formatters.js';
 
   export let isOpen = false;
   export let debt = null;
@@ -143,10 +143,10 @@
               <div class="mt-1 flex items-center gap-1">
                 <span class="text-sm font-bold text-slate-500">₱</span>
                 <input
-                  type="number"
-                  min={debt.total_paid || 0.01}
-                  step="any"
-                  bind:value={editedAmount}
+                  type="text"
+                  inputmode="decimal"
+                  value={formatAmount(editedAmount)}
+                  on:input={(event) => handleAmountInput(event, (value) => editedAmount = value)}
                   class="w-full min-w-0 px-2 py-1 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   aria-label="Loan amount"
                 />
@@ -296,10 +296,10 @@
                         <div class="flex items-center justify-end gap-1.5">
                           <span class="text-xs font-bold text-slate-500">₱</span>
                           <input
-                            type="number"
-                            min="0.01"
-                            step="any"
-                            bind:value={editedPaymentAmount}
+                            type="text"
+                            inputmode="decimal"
+                            value={formatAmount(editedPaymentAmount)}
+                            on:input={(event) => handleAmountInput(event, (value) => editedPaymentAmount = value)}
                             class="w-28 px-2 py-1.5 border border-slate-300 rounded-lg text-right font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             aria-label="Payment amount"
                           />

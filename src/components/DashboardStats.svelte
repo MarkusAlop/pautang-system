@@ -62,7 +62,9 @@
       </div>
       <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-700">
         <span>Active Borrowers:</span>
-        <span class="font-bold text-slate-900">{stats.active_borrowers_count} people</span>
+        <span class="font-bold text-slate-900">
+          {stats.active_borrowers_count} {stats.active_borrowers_count === 1 ? 'person' : 'people'}
+        </span>
       </div>
       <div class="mt-1 text-[11px] text-slate-500">
         Total unpaid money currently lent out

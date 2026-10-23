@@ -384,7 +384,7 @@
             {:else if activeTab === 'debts'}
               Your loan ledger
             {:else if activeTab === 'people'}
-              People you trust
+              Person directory
             {:else}
               Your data & settings
             {/if}

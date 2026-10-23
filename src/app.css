@@ -292,6 +292,14 @@ button {
   border-radius: 12px;
 }
 
+.payment-amount-input:focus::placeholder {
+  color: transparent;
+}
+
+.custom-relationship-input:focus::placeholder {
+  color: transparent;
+}
+
 .app-shell button:focus-visible,
 .app-shell a:focus-visible,
 .app-shell input:focus-visible,

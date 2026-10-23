@@ -11,7 +11,7 @@
   const tabs = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
     { id: 'debts', label: 'Loans', icon: FileSpreadsheet },
-    { id: 'people', label: 'Borrowers', icon: Users },
+    { id: 'people', label: 'Borrower', icon: Users },
     { id: 'settings', label: 'Settings', icon: Settings }
   ];
 </script>

@@ -261,7 +261,6 @@
                 class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-lg border border-emerald-200 transition-colors flex items-center gap-1"
                 title="Record a payment / collection"
               >
-                <Plus class="w-3.5 h-3.5" />
                 <span>+ Payment</span>
               </button>
 
