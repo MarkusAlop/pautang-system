@@ -1,5 +1,6 @@
 import { offlineGet, offlineGetAll, offlineRemove, offlineSet, offlineUpdate } from './offlineStore.js';
 import { getPhilippineDateString } from './dateTime.js';
+import { getAccessToken, getAuthHeaders } from './auth.js';
 
 const CACHE_PREFIX = 'api:';
 const OUTBOX_KEY = 'offline:outbox';
@@ -19,7 +20,7 @@ const EMPTY_STATS = {
 };
 
 function isOnline() {
-  return typeof navigator === 'undefined' || navigator.onLine;
+  return (typeof navigator === 'undefined' || navigator.onLine) && Boolean(getAccessToken());
 }
 
 function makeId() {
@@ -406,7 +407,8 @@ export async function syncOfflineQueue() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Client-Operation-Id': operation.operationId
+          'X-Client-Operation-Id': operation.operationId,
+          ...getAuthHeaders()
         },
         body: JSON.stringify(payload)
       });
@@ -440,9 +442,14 @@ export async function syncOfflineQueue() {
 
   for (const endpoint of ['/api/stats', '/api/debts', '/api/people']) {
     try {
-      const response = await fetch(endpoint);
-      if (response.ok) await cacheApiResponse(endpoint, await response.json());
-    } catch {}
+      const response = await fetch(endpoint, { headers: getAuthHeaders() });
+      if (!response.ok) {
+        return { synced, pending: queue.length, error: 'Could not refresh saved records after syncing.' };
+      }
+      await cacheApiResponse(endpoint, await response.json());
+    } catch {
+      return { synced, pending: queue.length, error: 'Connection lost while refreshing saved records.' };
+    }
   }
 
   const cachedEntries = await offlineGetAll();
@@ -464,12 +471,17 @@ export async function syncOfflineQueue() {
     }
   }
 
-  await Promise.all([...detailsToRefresh].map(async (endpoint) => {
+  for (const endpoint of detailsToRefresh) {
     try {
-      const response = await fetch(endpoint);
-      if (response.ok) await cacheApiResponse(endpoint, await response.json());
-    } catch {}
-  }));
+      const response = await fetch(endpoint, { headers: getAuthHeaders() });
+      if (!response.ok) {
+        return { synced, pending: queue.length, error: 'Could not refresh saved record details after syncing.' };
+      }
+      await cacheApiResponse(endpoint, await response.json());
+    } catch {
+      return { synced, pending: queue.length, error: 'Connection lost while refreshing saved records.' };
+    }
+  }
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('pautang:offline-sync', {

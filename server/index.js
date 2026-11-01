@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initDb } from './db.js';
+import { requireAuthentication, setupAuthRoutes } from './auth.js';
 import { setupApiRoutes } from './api.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +15,8 @@ app.use(express.json());
 
 // Setup API endpoints
 await initDb();
+setupAuthRoutes(app);
+app.use('/api', requireAuthentication);
 setupApiRoutes(app);
 
 // Serve frontend dist in production

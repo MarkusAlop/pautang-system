@@ -5,8 +5,10 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const DB_PATH = path.join(DATA_DIR, 'utang.sqlite');
+const DB_PATH = process.env.UTANG_DB_PATH
+  ? path.resolve(process.env.UTANG_DB_PATH)
+  : path.join(__dirname, '..', 'data', 'utang.sqlite');
+const DATA_DIR = path.dirname(DB_PATH);
 
 let db = null;
 
@@ -73,8 +75,24 @@ export async function initDb() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS auth_users (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_debts_person ON debts(person_id);
     CREATE INDEX IF NOT EXISTS idx_payments_debt ON payments(debt_id);
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at);
   `);
 
   saveDb();

@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import express from 'express';
 import { initDb } from './server/db.js';
+import { requireAuthentication, setupAuthRoutes } from './server/auth.js';
 import { setupApiRoutes } from './server/api.js';
 
 function apiPlugin() {
@@ -11,6 +12,8 @@ function apiPlugin() {
       await initDb();
       const app = express();
       app.use(express.json());
+      setupAuthRoutes(app);
+      app.use('/api', requireAuthentication);
       setupApiRoutes(app);
       server.middlewares.use(app);
     }

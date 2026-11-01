@@ -1,6 +1,8 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from './lib/api.js';
+  import { restoreAuthState, signOut } from './lib/auth.js';
+  import AuthGate from './components/AuthGate.svelte';
   import Navbar from './components/Navbar.svelte';
   import DashboardStats from './components/DashboardStats.svelte';
   import DebtsList from './components/DebtsList.svelte';
@@ -41,6 +43,10 @@
   let syncingOfflineRecords = false;
   let offlineSyncError = '';
   let installPrompt = null;
+  let authReady = false;
+  let authUser = null;
+  let accountExists = false;
+  let authError = '';
 
   // Modals state
   let isAddDebtOpen = false;
@@ -95,7 +101,7 @@
   }
 
   async function syncOfflineRecords() {
-    if (!isOnline || syncingOfflineRecords) return;
+    if (!isOnline || !api.hasServerSession() || syncingOfflineRecords) return;
     syncingOfflineRecords = true;
     offlineSyncError = '';
     try {
@@ -134,10 +140,37 @@
     }
   }
 
+  async function handleAuthenticated(event) {
+    authUser = event.detail.user;
+    accountExists = true;
+    authError = '';
+    isOnline = navigator.onLine;
+    try {
+      pendingSyncCount = await api.getPendingOperationCount();
+      if (isOnline && api.hasServerSession()) {
+        await syncOfflineRecords();
+      } else {
+        await loadOfflineData();
+      }
+    } catch (error) {
+      offlineSyncError = error.message || 'Could not load saved ledger data.';
+    }
+  }
+
+  async function handleSignOut() {
+    try {
+      await signOut();
+    } catch (error) {
+      authError = error.message || 'Could not end the server session.';
+    }
+    authUser = null;
+    toast = null;
+  }
+
   onMount(() => {
     const handleOnline = () => {
       isOnline = true;
-      void syncOfflineRecords();
+      if (authUser) void syncOfflineRecords();
     };
     const handleOffline = () => {
       isOnline = false;
@@ -160,12 +193,23 @@
     window.addEventListener('appinstalled', handleAppInstalled);
 
     void (async () => {
-      isOnline = navigator.onLine;
-      pendingSyncCount = await api.getPendingOperationCount();
-      if (isOnline) {
-        await syncOfflineRecords();
-      } else {
-        await loadOfflineData();
+      try {
+        const state = await restoreAuthState();
+        accountExists = state.configured;
+        authUser = state.session?.user || null;
+        isOnline = navigator.onLine;
+        if (authUser) {
+          pendingSyncCount = await api.getPendingOperationCount();
+          if (isOnline && api.hasServerSession()) {
+            await syncOfflineRecords();
+          } else {
+            await loadOfflineData();
+          }
+        }
+      } catch (error) {
+        authError = error.message || 'Could not check your account. Try signing in again.';
+      } finally {
+        authReady = true;
       }
     })();
 
@@ -339,6 +383,17 @@
   }
 </script>
 
+{#if !authReady}
+  <main class="auth-page" aria-live="polite">
+    <div class="auth-loading">Loading your secure sign-in…</div>
+  </main>
+{:else if !authUser}
+  <AuthGate
+    {accountExists}
+    initialError={authError}
+    on:authenticated={handleAuthenticated}
+  />
+{:else}
 <div class="app-shell min-h-screen flex flex-col bg-slate-50 selection:bg-emerald-500 selection:text-white">
   
   <!-- Navigation Header -->
@@ -356,18 +411,29 @@
     }}
   />
 
-  {#if !isOnline || pendingSyncCount > 0}
+  <div class="auth-account-bar">
+    <span>Signed in as <strong>{authUser.email}</strong></span>
+    <button type="button" on:click={handleSignOut}>Sign out</button>
+  </div>
+
+  {#if !isOnline || !api.hasServerSession() || pendingSyncCount > 0}
     <div class={`px-4 py-2 text-xs ${isOnline ? 'bg-blue-50 text-blue-900 border-b border-blue-200' : 'bg-amber-50 text-amber-900 border-b border-amber-200'}`} role="status" aria-live="polite">
       <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
         <span>
           {#if isOnline}
-            {syncingOfflineRecords ? 'Syncing offline records…' : `${pendingSyncCount} record${pendingSyncCount === 1 ? '' : 's'} waiting to sync.`}
+            {#if syncingOfflineRecords}
+              Syncing offline records…
+            {:else if !api.hasServerSession()}
+              Local sign-in. {pendingSyncCount} offline record{pendingSyncCount === 1 ? '' : 's'} waiting; sign in online to sync.
+            {:else}
+              {pendingSyncCount} record{pendingSyncCount === 1 ? '' : 's'} waiting to sync.
+            {/if}
           {:else}
             Offline mode. This device shows saved data; new borrowers, loans, and payments will sync when you reconnect.
           {/if}
           {#if offlineSyncError}<span class="block text-red-700 mt-1">{offlineSyncError}</span>{/if}
         </span>
-        {#if isOnline && pendingSyncCount > 0 && !syncingOfflineRecords}
+        {#if isOnline && api.hasServerSession() && pendingSyncCount > 0 && !syncingOfflineRecords}
           <button type="button" on:click={syncOfflineRecords} class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold">
             Sync now
           </button>
@@ -426,8 +492,8 @@
           </p>
         </div>
         <div class="ledger-status">
-          <span class:offline={!isOnline} class="status-dot"></span>
-          {isOnline ? 'All changes up to date' : 'Offline · saved on this device'}
+          <span class:offline={!isOnline || !api.hasServerSession()} class="status-dot"></span>
+          {isOnline && api.hasServerSession() ? 'All changes up to date' : 'Offline · saved on this device'}
         </div>
       </section>
 
@@ -580,3 +646,4 @@
   />
 
 </div>
+{/if}

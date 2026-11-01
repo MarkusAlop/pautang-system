@@ -104,6 +104,21 @@
       loading = false;
     }
   }
+
+  async function handleDownloadCsv() {
+    error = '';
+    try {
+      const csv = await api.exportCsv();
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'pautang_records.csv';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (downloadError) {
+      error = downloadError.message || 'Could not download the CSV file.';
+    }
+  }
 </script>
 
 <div class="max-w-4xl mx-auto space-y-6">
@@ -141,14 +156,14 @@
         </p>
       </div>
 
-      <a
-        href={api.exportCsvUrl}
-        download="pautang_records.csv"
+      <button
+        type="button"
+        on:click={handleDownloadCsv}
         class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all"
       >
         <Download class="w-4 h-4" />
         <span>Download CSV File</span>
-      </a>
+      </button>
     </div>
 
     <!-- 2. SQLite Database Storage Info -->

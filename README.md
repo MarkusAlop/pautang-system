@@ -3,7 +3,16 @@
 
 A modern, fast, and streamlined system built strictly for tracking **Pautang (Money Lent Out)** to family, friends, colleagues, and customers. The entire interface and data flow are in **English**.
 
-Built with **Svelte**, **Tailwind CSS**, and a local persistent **SQLite database**.
+Built with **Svelte**, **Tailwind CSS**, and a persistent **SQLite database**. The app requires account sign-in before showing the ledger.
+
+## 🔐 Account & Offline Access
+
+- The first sign-up creates the single account for this installation and opens the existing ledger; it does not erase existing records.
+- Account creation requires an internet connection. Passwords are stored on the server as salted scrypt hashes.
+- Sign in once while online on each device to enable later offline sign-in on that device. Offline changes remain in the browser's local IndexedDB queue and sync after an online sign-in.
+- Sign out to return to the sign-in screen. Offline sign-in is available only on a device with a previously saved verifier.
+- Use HTTPS for remote access so sign-in credentials and session tokens are protected in transit. Local development on `localhost` is supported.
+- For hosted deployments, point `UTANG_DB_PATH` at a persistent mounted volume; an ephemeral container filesystem can lose online records when the service restarts or redeploys.
 
 ---
 
@@ -76,3 +85,5 @@ npm run dev
 ```powershell
 npm run build
 ```
+
+The database defaults to `data/utang.sqlite`. Set `UTANG_DB_PATH` to use a different SQLite file.

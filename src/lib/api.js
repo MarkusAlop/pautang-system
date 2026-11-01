@@ -7,9 +7,11 @@ import {
   queueOfflineRequest,
   syncOfflineQueue
 } from './offlineApi.js';
+import { getAuthHeaders, hasServerSession } from './auth.js';
 
 async function request(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
+  const { headers: optionHeaders, ...fetchOptions } = options;
 
   if (!isNetworkAvailable()) {
     if (method === 'GET') return getOfflineResponse(endpoint);
@@ -17,11 +19,12 @@ async function request(endpoint, options = {}) {
   }
 
   const config = {
+    ...fetchOptions,
     headers: {
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...getAuthHeaders(),
+      ...optionHeaders,
     },
-    ...options,
   };
 
   let response;
@@ -110,8 +113,9 @@ export const api = {
   // Demo / Utilities
   seedDemo: () => request('/api/demo/seed', { method: 'POST' }),
   resetAll: () => request('/api/reset', { method: 'POST' }),
-  exportCsvUrl: '/api/export/csv',
   getPendingOperationCount,
   getOfflineSnapshot,
+  hasServerSession,
+  exportCsv: () => request('/api/export/csv'),
   syncOfflineChanges: syncOfflineQueue,
 };
