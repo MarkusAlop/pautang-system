@@ -5,7 +5,7 @@ import {
   scrypt as scryptCallback,
   timingSafeEqual
 } from 'crypto';
-import { queryOne, run } from './db.js';
+import { claimUnownedRecords, queryOne, run, runWithAccount } from './db.js';
 
 const scrypt = promisify(scryptCallback);
 const SESSION_LIFETIME_DAYS = 30;
@@ -62,7 +62,7 @@ function handleUnexpected(error, res) {
 
 export function setupAuthRoutes(router) {
   router.get('/api/auth/status', async (_req, res) => {
-    res.json({ configured: Boolean(await queryOne('SELECT id FROM auth_users WHERE id = 1')) });
+    res.json({ configured: Boolean(await queryOne('SELECT id FROM auth_users LIMIT 1')) });
   });
 
   router.post('/api/auth/signup', async (req, res) => {
@@ -73,18 +73,16 @@ export function setupAuthRoutes(router) {
     if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
       return res.status(400).json({ error: 'Password must be between 8 and 128 characters.' });
     }
-    if (await queryOne('SELECT id FROM auth_users WHERE id = 1')) {
-      return res.status(409).json({ error: 'An account already exists. Please sign in.' });
-    }
-
     try {
       const salt = randomBytes(16).toString('hex');
       const passwordHash = await hashPassword(password, salt);
-      await run(`
-        INSERT INTO auth_users (id, email, password_hash, password_salt, created_at)
-        VALUES (1, ?, ?, ?, ?)
+      const user = await queryOne(`
+        INSERT INTO auth_users (email, password_hash, password_salt, created_at)
+        VALUES (?, ?, ?, ?)
+        RETURNING id
       `, [email, passwordHash, salt, new Date().toISOString()]);
-      const token = await createSession(1);
+      await claimUnownedRecords(user.id);
+      const token = await createSession(user.id);
       return res.status(201).json({ token, user: { email } });
     } catch (error) {
       return handleUnexpected(error, res);
@@ -102,7 +100,7 @@ export function setupAuthRoutes(router) {
       const user = await queryOne(`
         SELECT id, email, password_hash, password_salt
         FROM auth_users
-        WHERE id = 1 AND email = ?
+        WHERE email = ?
       `, [email]);
       if (!user) return res.status(401).json({ error: 'Email or password is incorrect.' });
 
@@ -137,7 +135,7 @@ export async function requireAuthentication(req, res, next) {
     const user = await findSession(req);
     if (!user) return res.status(401).json({ error: 'Please sign in to access your ledger.' });
     req.authUser = user;
-    return next();
+    return runWithAccount(user.id, next);
   } catch (error) {
     console.error('Authentication check failed:', error);
     return res.status(500).json({ error: 'Could not verify your session.' });

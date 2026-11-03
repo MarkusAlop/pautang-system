@@ -7,10 +7,10 @@ Built with **Svelte**, **Tailwind CSS**, and a PostgreSQL database. The app requ
 
 ## 🔐 Account & Offline Access
 
-- The first sign-up creates the single account for this installation and opens the existing ledger; it does not erase existing records.
+- Anyone can create an account. Each account has a private ledger that is isolated from other accounts.
 - Account creation requires an internet connection. Passwords are stored on the server as salted scrypt hashes.
-- Sign in once while online on each device to enable later offline sign-in on that device. Offline changes remain in the browser's local IndexedDB queue and sync after an online sign-in.
-- Sign out to return to the sign-in screen. Offline sign-in is available only on a device with a previously saved verifier.
+- Sign-in requires an internet connection. After signing in, offline changes remain in that account's browser-local IndexedDB queue and sync when the device reconnects.
+- Sign out to return to the sign-in screen. Signing in again requires an internet connection.
 - Use HTTPS for remote access so sign-in credentials and session tokens are protected in transit. Local development on `localhost` is supported.
 - Hosted deployments use PostgreSQL so ledger data survives application restarts and redeploys.
 
@@ -99,6 +99,6 @@ The included [`render.yaml`](./render.yaml) creates a Render web service and a m
    ```
 
    The importer reads `data/utang.sqlite` (or the file named by `UTANG_DB_PATH`) and stops if any destination table already contains records. It imports the existing account and session records as well as borrowers, loans, payments, and pending offline-operation records. Keep the connection string private and do not commit it.
-4. Open the Render service URL and sign in with the imported account. For a fresh install with no imported account, create the first account in the app.
+4. Open the Render service URL and sign in with the imported account. Anyone can create another account; each new account starts with a separate, private ledger.
 
 To run the importer against another PostgreSQL provider, set `DATABASE_URL` to that provider’s connection string. Never expose the database URL in browser code or commit it to the repository.

@@ -1,7 +1,7 @@
 <script>
   import { createEventDispatcher } from 'svelte';
   import { ArrowRight, LockKeyhole, Wallet } from 'lucide-svelte';
-  import { authenticate, canSignInOffline } from '../lib/auth.js';
+  import { authenticate } from '../lib/auth.js';
 
   export let accountExists = false;
   export let initialError = '';
@@ -12,9 +12,6 @@
   let password = '';
   let error = initialError;
   let submitting = false;
-
-  $: if (accountExists && mode === 'signup') mode = 'login';
-  const offlineAvailable = canSignInOffline();
 
   async function submit() {
     error = '';
@@ -67,7 +64,7 @@
         required
       />
       {#if mode === 'signup'}
-        <p class="auth-field-hint">Use at least 8 characters. Account creation requires internet access; your password is never stored in plain text.</p>
+        <p class="auth-field-hint">Use at least 8 characters. Sign-in and account creation require an internet connection.</p>
       {/if}
 
       {#if error}
@@ -80,29 +77,19 @@
       </button>
     </form>
 
-    {#if !accountExists}
-      <p class="auth-switch">
-        {#if mode === 'signup'}
-          Already have an account?
-          <button type="button" on:click={() => { mode = 'login'; error = ''; }}>Sign in</button>
-        {:else}
-          Need an account?
-          <button type="button" on:click={() => { mode = 'signup'; error = ''; }}>Create one</button>
-        {/if}
-      </p>
-    {:else}
-      <p class="auth-switch">
-        {#if offlineAvailable}
-          Offline sign-in is available on this device after a successful online sign-in.
-        {:else}
-          This app has one account. Contact the account owner if you need access.
-        {/if}
-      </p>
-    {/if}
+    <p class="auth-switch">
+      {#if mode === 'signup'}
+        Already have an account?
+        <button type="button" on:click={() => { mode = 'login'; error = ''; }}>Sign in</button>
+      {:else}
+        Need an account?
+        <button type="button" on:click={() => { mode = 'signup'; error = ''; }}>Create one</button>
+      {/if}
+    </p>
 
     <div class="auth-privacy-note">
       <LockKeyhole size={15} />
-      <span>Your account opens the existing ledger. Offline changes stay on this device until they can sync.</span>
+      <span>Each account has a private ledger. Sign in online; records can be queued on this device for later sync.</span>
     </div>
   </section>
 </main>

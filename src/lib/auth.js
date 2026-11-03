@@ -1,52 +1,9 @@
 const TOKEN_KEY = 'pautangtrack:auth-token';
 const USER_KEY = 'pautangtrack:auth-user';
-const CREDENTIAL_KEY = 'pautangtrack:offline-credential';
-const PBKDF2_ITERATIONS = 120000;
+const LEGACY_CREDENTIAL_KEY = 'pautangtrack:offline-credential';
 
 function browserIsOnline() {
   return typeof navigator === 'undefined' || navigator.onLine;
-}
-
-function encodeBase64(bytes) {
-  return btoa(String.fromCharCode(...new Uint8Array(bytes)));
-}
-
-function decodeBase64(value) {
-  return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
-}
-
-async function deriveVerifier(password, salt) {
-  if (!globalThis.crypto?.subtle) {
-    throw new Error('Secure offline sign-in is unavailable in this browser. Use HTTPS or localhost.');
-  }
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(password),
-    'PBKDF2',
-    false,
-    ['deriveBits']
-  );
-  return crypto.subtle.deriveBits({
-    name: 'PBKDF2',
-    hash: 'SHA-256',
-    salt,
-    iterations: PBKDF2_ITERATIONS
-  }, key, 256);
-}
-
-async function saveOfflineCredential(email, password) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const verifier = await deriveVerifier(password, salt);
-  localStorage.setItem(CREDENTIAL_KEY, JSON.stringify({
-    email,
-    salt: encodeBase64(salt),
-    verifier: encodeBase64(verifier)
-  }));
-}
-
-function readOfflineCredential() {
-  const value = localStorage.getItem(CREDENTIAL_KEY);
-  return value ? JSON.parse(value) : null;
 }
 
 function storeSession(result) {
@@ -59,9 +16,14 @@ function cachedUser() {
   return value ? JSON.parse(value) : null;
 }
 
+export function getCurrentUser() {
+  return cachedUser();
+}
+
 function clearSession() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(LEGACY_CREDENTIAL_KEY);
 }
 
 async function readJsonResponse(response) {
@@ -101,12 +63,7 @@ export function getAuthHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export function canSignInOffline() {
-  return Boolean(readOfflineCredential());
-}
-
 export async function restoreAuthState() {
-  let credential = readOfflineCredential();
   const token = getAccessToken();
   const savedUser = cachedUser();
 
@@ -128,63 +85,32 @@ export async function restoreAuthState() {
       }
       throw error;
     }
-  } else if (token && savedUser) {
+  } else if (token && savedUser && !browserIsOnline()) {
     return { session: { user: savedUser }, configured: true };
   }
 
   if (browserIsOnline()) {
-    try {
-      const response = await fetch('/api/auth/status');
-      const result = await readJsonResponse(response);
-      return { session: null, configured: result.configured || Boolean(credential) };
-    } catch (error) {
-      if (!(error instanceof TypeError) || !credential) throw error;
-    }
+    const response = await fetch('/api/auth/status');
+    const result = await readJsonResponse(response);
+    return { session: null, configured: result.configured };
   }
 
-  credential = readOfflineCredential();
-  return { session: null, configured: Boolean(credential) };
+  return { session: null, configured: false };
 }
 
 export async function authenticate(mode, emailInput, password) {
   const email = emailInput.trim().toLowerCase();
-  if (mode === 'signup' && !browserIsOnline()) {
-    throw new Error('Creating your account requires an internet connection.');
+  if (!browserIsOnline()) {
+    throw new Error('Sign-in and account creation require an internet connection.');
   }
 
-  if (browserIsOnline()) {
-    let result;
-    try {
-      result = await postCredentials(
-        mode === 'signup' ? '/api/auth/signup' : '/api/auth/login',
-        email,
-        password
-      );
-    } catch (error) {
-      if (!(error instanceof TypeError) || mode !== 'login') throw error;
-      return authenticateOffline(email, password);
-    }
-    await saveOfflineCredential(result.user.email, password);
-    storeSession(result);
-    return { user: result.user };
-  }
-
-  return authenticateOffline(email, password);
-}
-
-async function authenticateOffline(email, password) {
-  const credential = readOfflineCredential();
-  if (!credential || credential.email !== email) {
-    throw new Error('Offline sign-in is available only on a device where you have signed in before.');
-  }
-  const verifier = await deriveVerifier(password, decodeBase64(credential.salt));
-  const savedVerifier = decodeBase64(credential.verifier);
-  const candidateBytes = new Uint8Array(verifier);
-  if (candidateBytes.length !== savedVerifier.length
-    || !candidateBytes.every((value, index) => value === savedVerifier[index])) {
-    throw new Error('Email or password is incorrect.');
-  }
-  return { user: { email: credential.email }, offline: true };
+  const result = await postCredentials(
+    mode === 'signup' ? '/api/auth/signup' : '/api/auth/login',
+    email,
+    password
+  );
+  storeSession(result);
+  return { user: result.user };
 }
 
 export async function signOut() {

@@ -6,7 +6,8 @@ import { closeDb, initDb } from '../server/db.js';
 
 const { Pool } = pg;
 const sourcePath = path.resolve(process.env.UTANG_DB_PATH || 'data/utang.sqlite');
-const tables = ['people', 'debts', 'payments', 'api_idempotency', 'auth_users', 'auth_sessions'];
+const tables = ['auth_users', 'people', 'debts', 'payments', 'api_idempotency', 'auth_sessions'];
+const accountTables = new Set(['people', 'debts', 'payments', 'api_idempotency']);
 
 if (!process.env.DATABASE_URL) {
   throw new Error('Set DATABASE_URL to the destination PostgreSQL database before importing.');
@@ -33,10 +34,18 @@ const readRows = (table) => {
 };
 
 const sourceRows = Object.fromEntries(tables.map((table) => [table, readRows(table)]));
+const importAccountId = sourceRows.auth_users[0]?.id;
+if (
+  importAccountId === undefined &&
+  [...accountTables].some((table) => sourceRows[table].length > 0)
+) {
+  throw new Error('The SQLite database contains ledger data but no account to own it.');
+}
 const client = await target.connect();
 
 try {
   await client.query('BEGIN');
+  await client.query("SELECT set_config('app.maintenance', 'on', true)");
   for (const table of tables) {
     const { rows } = await client.query(`SELECT COUNT(*)::INTEGER AS count FROM ${table}`);
     if (rows[0].count !== 0) {
@@ -48,6 +57,10 @@ try {
     for (const row of sourceRows[table]) {
       const columns = Object.keys(row);
       const values = columns.map((column) => row[column]);
+      if (accountTables.has(table)) {
+        columns.push('account_id');
+        values.push(row.account_id ?? importAccountId);
+      }
       const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
       await client.query(
         `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`,

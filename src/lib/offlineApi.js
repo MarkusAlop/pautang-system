@@ -1,10 +1,6 @@
 import { offlineGet, offlineGetAll, offlineRemove, offlineSet, offlineUpdate } from './offlineStore.js';
 import { getPhilippineDateString } from './dateTime.js';
-import { getAccessToken, getAuthHeaders } from './auth.js';
-
-const CACHE_PREFIX = 'api:';
-const OUTBOX_KEY = 'offline:outbox';
-const ID_MAP_KEY = 'offline:id-mappings';
+import { getAccessToken, getAuthHeaders, getCurrentUser } from './auth.js';
 
 const EMPTY_STATS = {
   total_outstanding: 0,
@@ -31,8 +27,22 @@ function makeTemporaryId() {
   return -(Date.now() * 1000 + Math.floor(Math.random() * 1000));
 }
 
+function accountStoragePrefix() {
+  const email = getCurrentUser()?.email;
+  if (!email) throw new Error('Sign in to access this device’s saved records.');
+  return `account:${encodeURIComponent(email.toLowerCase())}:`;
+}
+
 function cacheKey(endpoint) {
-  return `${CACHE_PREFIX}${endpoint}`;
+  return `${accountStoragePrefix()}api:${endpoint}`;
+}
+
+function outboxKey() {
+  return `${accountStoragePrefix()}offline:outbox`;
+}
+
+function idMapKey() {
+  return `${accountStoragePrefix()}offline:id-mappings`;
 }
 
 function notifyQueue(queue) {
@@ -44,7 +54,7 @@ function notifyQueue(queue) {
 }
 
 async function enqueue(operation) {
-  const queue = await offlineUpdate(OUTBOX_KEY, (current) => [...current, operation], []);
+  const queue = await offlineUpdate(outboxKey(), (current) => [...current, operation], []);
   notifyQueue(queue);
 }
 
@@ -371,14 +381,14 @@ export async function queueOfflineRequest(endpoint, options = {}) {
 }
 
 export async function getPendingOperationCount() {
-  return (await offlineGet(OUTBOX_KEY) || []).length;
+  return (await offlineGet(outboxKey()) || []).length;
 }
 
 export async function syncOfflineQueue() {
   if (!isOnline()) return { synced: 0, pending: await getPendingOperationCount() };
 
-  let queue = await offlineGet(OUTBOX_KEY) || [];
-  let idMappings = await offlineGet(ID_MAP_KEY) || { people: {}, debts: {} };
+  let queue = await offlineGet(outboxKey()) || [];
+  let idMappings = await offlineGet(idMapKey()) || { people: {}, debts: {} };
   let synced = 0;
 
   for (const operation of [...queue]) {
@@ -433,9 +443,9 @@ export async function syncOfflineQueue() {
       if (operation.temporaryPersonId) idMappings.people[String(operation.temporaryPersonId)] = result.person_id;
     }
 
-    await offlineSet(ID_MAP_KEY, idMappings);
+    await offlineSet(idMapKey(), idMappings);
     queue = queue.filter((entry) => entry.operationId !== operation.operationId);
-    await offlineSet(OUTBOX_KEY, queue);
+    await offlineSet(outboxKey(), queue);
     synced += 1;
     notifyQueue(queue);
   }
@@ -455,7 +465,9 @@ export async function syncOfflineQueue() {
   const cachedEntries = await offlineGetAll();
   const detailsToRefresh = new Set();
   for (const [key] of cachedEntries) {
-    const match = key.match(/^api:(\/api\/(?:people|debts)\/-?\d+)$/);
+    const accountPrefix = accountStoragePrefix();
+    if (!key.startsWith(accountPrefix)) continue;
+    const match = key.slice(accountPrefix.length).match(/^api:(\/api\/(?:people|debts)\/-?\d+)$/);
     if (!match) continue;
     const endpoint = match[1];
     const personMatch = endpoint.match(/^\/api\/people\/(-\d+)$/);
