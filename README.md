@@ -89,7 +89,9 @@ The production server listens on port `3000` by default.
 The included [`render.yaml`](./render.yaml) creates a Render web service and a managed PostgreSQL database. The configured web service and database use paid plans; this avoids the data loss risks of an ephemeral free web-service filesystem and expiring free database.
 
 1. Push this repository to GitHub and create a Render account.
-2. In Render, choose **New → Blueprint**, connect the repository, and deploy the `render.yaml` blueprint. Render provides `DATABASE_URL` to the app without putting credentials in source control.
+2. In Render, choose **New → Blueprint**, connect the repository, and deploy the `render.yaml` blueprint. This automatically creates and links PostgreSQL through the `DATABASE_URL` environment variable.
+
+   If you created the app with **New → Web Service** instead, Render does not apply the database link from `render.yaml`. Create a PostgreSQL database in Render, then open the web service's **Environment** settings, add `DATABASE_URL`, and set it to the database's **Internal Database URL** (use the same Render region). Save and redeploy. Do not put this URL in source code or a `VITE_` variable.
 3. If you have existing local records, import them before creating an account or adding cloud records. In Render’s database settings, copy its **external** connection string and run the following in PowerShell from the repository root:
 
    ```powershell

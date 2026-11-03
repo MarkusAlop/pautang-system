@@ -15,7 +15,9 @@ pool.on('error', (error) => {
 
 export async function initDb() {
   if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL must be set to connect to PostgreSQL.');
+    throw new Error(
+      'DATABASE_URL is missing. In Render, set the web service environment variable DATABASE_URL to your PostgreSQL database URL, or deploy/sync this repository as a Blueprint to apply render.yaml.'
+    );
   }
 
   await pool.query(`
