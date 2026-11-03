@@ -1,9 +1,9 @@
 # PautangTrack 📋
-### Personal Lending & Debtors Management System (Svelte + Tailwind CSS + SQLite)
+### Personal Lending & Debtors Management System (Svelte + Tailwind CSS + PostgreSQL)
 
 A modern, fast, and streamlined system built strictly for tracking **Pautang (Money Lent Out)** to family, friends, colleagues, and customers. The entire interface and data flow are in **English**.
 
-Built with **Svelte**, **Tailwind CSS**, and a persistent **SQLite database**. The app requires account sign-in before showing the ledger.
+Built with **Svelte**, **Tailwind CSS**, and a PostgreSQL database. The app requires account sign-in before showing the ledger.
 
 ## 🔐 Account & Offline Access
 
@@ -12,7 +12,7 @@ Built with **Svelte**, **Tailwind CSS**, and a persistent **SQLite database**. T
 - Sign in once while online on each device to enable later offline sign-in on that device. Offline changes remain in the browser's local IndexedDB queue and sync after an online sign-in.
 - Sign out to return to the sign-in screen. Offline sign-in is available only on a device with a previously saved verifier.
 - Use HTTPS for remote access so sign-in credentials and session tokens are protected in transit. Local development on `localhost` is supported.
-- For hosted deployments, point `UTANG_DB_PATH` at a persistent mounted volume; an ephemeral container filesystem can lose online records when the service restarts or redeploys.
+- Hosted deployments use PostgreSQL so ledger data survives application restarts and redeploys.
 
 ---
 
@@ -57,7 +57,7 @@ Generate polished payment reminders in one click:
 - Print or save to PDF in one click (`window.print()`).
 
 ### 7. Data Management & Excel/CSV Export
-- **100% Local SQLite Database**: Saved at [`data/utang.sqlite`](file:///d:/Utang%20System/data/utang.sqlite).
+- **PostgreSQL Database**: The server uses the `DATABASE_URL` connection string; SQLite remains available as the source for one-time imports.
 - **Export to CSV**: Download complete records in Excel/Sheets-ready CSV format.
 - **Sample Data Loader**: Preloaded with realistic sample records.
 - **Reset All Data**: Clean wipe when you want to start fresh.
@@ -66,24 +66,39 @@ Generate polished payment reminders in one click:
 
 ## 🚀 How to Run the Application
 
-The system is compiled and running at:
-👉 **[http://localhost:3000](http://localhost:3000)**
+### Run Locally
 
-### Quick Commands
+The server requires PostgreSQL. Set `DATABASE_URL` to a reachable PostgreSQL database before starting the development or production server.
 
-#### Start the Server:
+#### Development server (Vite):
 ```powershell
-npm start
-```
-
-#### Run in Development Mode (Live Hot-Reload):
-```powershell
+$env:DATABASE_URL = "postgresql://user:password@localhost:5432/pautangtrack"
 npm run dev
 ```
 
-#### Rebuild Frontend:
+Open **http://localhost:5173**. For production mode, build the frontend and then start the Express server:
 ```powershell
 npm run build
+npm start
 ```
 
-The database defaults to `data/utang.sqlite`. Set `UTANG_DB_PATH` to use a different SQLite file.
+The production server listens on port `3000` by default.
+
+## Deploy to Render
+
+The included [`render.yaml`](./render.yaml) creates a Render web service and a managed PostgreSQL database. The configured web service and database use paid plans; this avoids the data loss risks of an ephemeral free web-service filesystem and expiring free database.
+
+1. Push this repository to GitHub and create a Render account.
+2. In Render, choose **New → Blueprint**, connect the repository, and deploy the `render.yaml` blueprint. Render provides `DATABASE_URL` to the app without putting credentials in source control.
+3. If you have existing local records, import them before creating an account or adding cloud records. In Render’s database settings, copy its **external** connection string and run the following in PowerShell from the repository root:
+
+   ```powershell
+   $env:DATABASE_URL = "your-render-external-database-connection-string"
+   $env:NODE_ENV = "production"
+   node scripts/import-sqlite-to-postgres.js
+   ```
+
+   The importer reads `data/utang.sqlite` (or the file named by `UTANG_DB_PATH`) and stops if any destination table already contains records. It imports the existing account and session records as well as borrowers, loans, payments, and pending offline-operation records. Keep the connection string private and do not commit it.
+4. Open the Render service URL and sign in with the imported account. For a fresh install with no imported account, create the first account in the app.
+
+To run the importer against another PostgreSQL provider, set `DATABASE_URL` to that provider’s connection string. Never expose the database URL in browser code or commit it to the repository.

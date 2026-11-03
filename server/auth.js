@@ -28,14 +28,14 @@ async function createSession(userId) {
   const token = randomBytes(32).toString('hex');
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_LIFETIME_DAYS * 24 * 60 * 60 * 1000);
-  run(`
+  await run(`
     INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at)
     VALUES (?, ?, ?, ?)
   `, [hashToken(token), userId, now.toISOString(), expiresAt.toISOString()]);
   return token;
 }
 
-function findSession(req) {
+async function findSession(req) {
   const token = getToken(req);
   if (!token) return null;
   return queryOne(`
@@ -53,7 +53,7 @@ function validEmail(email) {
 }
 
 function handleUnexpected(error, res) {
-  if (String(error.message).includes('UNIQUE constraint failed: auth_users.id')) {
+  if (error.code === '23505') {
     return res.status(409).json({ error: 'An account already exists. Please sign in.' });
   }
   console.error('Authentication request failed:', error);
@@ -61,8 +61,8 @@ function handleUnexpected(error, res) {
 }
 
 export function setupAuthRoutes(router) {
-  router.get('/api/auth/status', (_req, res) => {
-    res.json({ configured: Boolean(queryOne('SELECT id FROM auth_users WHERE id = 1')) });
+  router.get('/api/auth/status', async (_req, res) => {
+    res.json({ configured: Boolean(await queryOne('SELECT id FROM auth_users WHERE id = 1')) });
   });
 
   router.post('/api/auth/signup', async (req, res) => {
@@ -73,14 +73,14 @@ export function setupAuthRoutes(router) {
     if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
       return res.status(400).json({ error: 'Password must be between 8 and 128 characters.' });
     }
-    if (queryOne('SELECT id FROM auth_users WHERE id = 1')) {
+    if (await queryOne('SELECT id FROM auth_users WHERE id = 1')) {
       return res.status(409).json({ error: 'An account already exists. Please sign in.' });
     }
 
     try {
       const salt = randomBytes(16).toString('hex');
       const passwordHash = await hashPassword(password, salt);
-      run(`
+      await run(`
         INSERT INTO auth_users (id, email, password_hash, password_salt, created_at)
         VALUES (1, ?, ?, ?, ?)
       `, [email, passwordHash, salt, new Date().toISOString()]);
@@ -99,7 +99,7 @@ export function setupAuthRoutes(router) {
     }
 
     try {
-      const user = queryOne(`
+      const user = await queryOne(`
         SELECT id, email, password_hash, password_salt
         FROM auth_users
         WHERE id = 1 AND email = ?
@@ -119,22 +119,27 @@ export function setupAuthRoutes(router) {
     }
   });
 
-  router.get('/api/auth/session', (req, res) => {
-    const user = findSession(req);
+  router.get('/api/auth/session', async (req, res) => {
+    const user = await findSession(req);
     if (!user) return res.status(401).json({ error: 'Your session has expired. Please sign in again.' });
     return res.json({ user: { email: user.email } });
   });
 
-  router.post('/api/auth/logout', (req, res) => {
+  router.post('/api/auth/logout', async (req, res) => {
     const token = getToken(req);
-    if (token) run('DELETE FROM auth_sessions WHERE token_hash = ?', [hashToken(token)]);
+    if (token) await run('DELETE FROM auth_sessions WHERE token_hash = ?', [hashToken(token)]);
     return res.status(204).end();
   });
 }
 
-export function requireAuthentication(req, res, next) {
-  const user = findSession(req);
-  if (!user) return res.status(401).json({ error: 'Please sign in to access your ledger.' });
-  req.authUser = user;
-  return next();
+export async function requireAuthentication(req, res, next) {
+  try {
+    const user = await findSession(req);
+    if (!user) return res.status(401).json({ error: 'Please sign in to access your ledger.' });
+    req.authUser = user;
+    return next();
+  } catch (error) {
+    console.error('Authentication check failed:', error);
+    return res.status(500).json({ error: 'Could not verify your session.' });
+  }
 }

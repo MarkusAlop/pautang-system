@@ -1,37 +1,23 @@
-import initSqlJs from 'sql.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import pg from 'pg';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DB_PATH = process.env.UTANG_DB_PATH
-  ? path.resolve(process.env.UTANG_DB_PATH)
-  : path.join(__dirname, '..', 'data', 'utang.sqlite');
-const DATA_DIR = path.dirname(DB_PATH);
+const { Pool } = pg;
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
+});
 
-let db = null;
+pool.on('error', (error) => {
+  console.error('Unexpected PostgreSQL connection error:', error);
+});
 
 export async function initDb() {
-  if (db) return db;
-
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL must be set to connect to PostgreSQL.');
   }
 
-  const SQL = await initSqlJs();
-
-  if (fs.existsSync(DB_PATH)) {
-    const fileBuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
-  }
-
-  // Create tables if they do not exist
-  db.run(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS people (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       nickname TEXT,
       relationship TEXT DEFAULT 'Friend',
@@ -42,30 +28,28 @@ export async function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS debts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      person_id INTEGER NOT NULL,
-      type TEXT NOT NULL, -- 'lent' (pautang - they owe me) or 'borrowed' (utang ko - I owe them)
-      amount REAL NOT NULL,
+      id SERIAL PRIMARY KEY,
+      person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      amount DOUBLE PRECISION NOT NULL,
       reason TEXT NOT NULL,
       date_incurred TEXT NOT NULL,
       due_date TEXT,
       notes TEXT,
-      status TEXT NOT NULL DEFAULT 'active', -- 'active', 'paid', 'forgiven'
+      status TEXT NOT NULL DEFAULT 'active',
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE
+      updated_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS payments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      debt_id INTEGER NOT NULL,
-      amount REAL NOT NULL,
+      id SERIAL PRIMARY KEY,
+      debt_id INTEGER NOT NULL REFERENCES debts(id) ON DELETE CASCADE,
+      amount DOUBLE PRECISION NOT NULL,
       payment_date TEXT NOT NULL,
-      payment_method TEXT NOT NULL DEFAULT 'Cash', -- 'Cash', 'GCash', 'Maya', 'Bank Transfer', 'Other'
+      payment_method TEXT NOT NULL DEFAULT 'Cash',
       reference_no TEXT,
       notes TEXT,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (debt_id) REFERENCES debts(id) ON DELETE CASCADE
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS api_idempotency (
@@ -94,43 +78,33 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_payments_debt ON payments(debt_id);
     CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at);
   `);
-
-  saveDb();
-  return db;
 }
 
-export function saveDb() {
-  if (!db) return;
-  const binaryArray = db.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(binaryArray));
+export async function closeDb() {
+  await pool.end();
 }
 
-export function query(sql, params = []) {
-  if (!db) throw new Error('Database not initialized');
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return rows;
+function toPostgresPlaceholders(sql) {
+  let parameterIndex = 0;
+  return sql.replace(/\?/g, () => `$${++parameterIndex}`);
 }
 
-export function queryOne(sql, params = []) {
-  const rows = query(sql, params);
-  return rows.length > 0 ? rows[0] : null;
+export async function query(sql, params = []) {
+  const result = await pool.query(toPostgresPlaceholders(sql), params);
+  return result.rows;
 }
 
-export function run(sql, params = []) {
-  if (!db) throw new Error('Database not initialized');
-  db.run(sql, params);
-  const lastId = queryOne('SELECT last_insert_rowid() as id')?.id;
-  const changes = db.getRowsModified();
-  saveDb();
-  return { lastInsertRowid: lastId, changes };
+export async function queryOne(sql, params = []) {
+  const rows = await query(sql, params);
+  return rows[0] || null;
 }
 
-export function getDbPath() {
-  return DB_PATH;
+export async function run(sql, params = []) {
+  const insertHasId = /^\s*INSERT\s+INTO\s+(people|debts|payments)\b/i.test(sql);
+  const statement = insertHasId ? `${sql.trim().replace(/;$/, '')} RETURNING id` : sql;
+  const result = await pool.query(toPostgresPlaceholders(statement), params);
+  return {
+    lastInsertRowid: result.rows[0]?.id,
+    changes: result.rowCount
+  };
 }

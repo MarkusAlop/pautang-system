@@ -1,25 +1,25 @@
-import { query, queryOne, run, saveDb } from './db.js';
+import { query, queryOne, run } from './db.js';
 import { addDaysToDateString, getPhilippineDateString } from '../src/lib/dateTime.js';
 
 export function setupApiRoutes(router) {
-  const replayOperation = (req, res) => {
+  const replayOperation = async (req, res) => {
     const operationId = req.get('X-Client-Operation-Id');
     if (!operationId) return false;
 
-    const saved = queryOne(`SELECT status_code, response_json FROM api_idempotency WHERE operation_id = ?`, [operationId]);
+    const saved = await queryOne(`SELECT status_code, response_json FROM api_idempotency WHERE operation_id = ?`, [operationId]);
     if (!saved) return false;
 
     res.status(saved.status_code).json(JSON.parse(saved.response_json));
     return true;
   };
 
-  const rememberOperation = (req, statusCode, responseBody) => {
+  const rememberOperation = async (req, statusCode, responseBody) => {
     const operationId = req.get('X-Client-Operation-Id');
     if (!operationId) return;
 
-    run(`
-      INSERT OR IGNORE INTO api_idempotency (operation_id, status_code, response_json, created_at)
-      VALUES (?, ?, ?, ?)
+    await run(`
+      INSERT INTO api_idempotency (operation_id, status_code, response_json, created_at)
+      VALUES (?, ?, ?, ?) ON CONFLICT (operation_id) DO NOTHING
     `, [operationId, statusCode, JSON.stringify(responseBody), new Date().toISOString()]);
   };
 
@@ -61,17 +61,17 @@ export function setupApiRoutes(router) {
   };
 
   // 1. GET /api/stats (Pautang-only statistics)
-  router.get('/api/stats', (req, res) => {
+  router.get('/api/stats', async (req, res) => {
     try {
       const today = getPhilippineDateString();
       const currentMonthPrefix = today.substring(0, 7); // YYYY-MM
 
-      const loans = query(`
+      const loans = (await query(`
         SELECT d.*, 
                COALESCE((SELECT SUM(amount) FROM payments WHERE debt_id = d.id), 0) as total_paid
         FROM debts d
         WHERE d.type = 'lent' OR d.type IS NULL
-      `).map(enrichLoan);
+      `)).map(enrichLoan);
 
       let totalPrincipalLent = 0;
       let totalCollected = 0;
@@ -106,7 +106,7 @@ export function setupApiRoutes(router) {
       }
 
       // Payments received this month
-      const paymentsThisMonth = query(`
+      const paymentsThisMonth = await query(`
         SELECT p.amount 
         FROM payments p
         JOIN debts d ON p.debt_id = d.id
@@ -136,7 +136,7 @@ export function setupApiRoutes(router) {
   });
 
   // 2. GET /api/debts (List all pautang loans)
-  router.get('/api/debts', (req, res) => {
+  router.get('/api/debts', async (req, res) => {
     try {
       const { status, person_id, search } = req.query;
       let sql = `
@@ -159,7 +159,7 @@ export function setupApiRoutes(router) {
 
       sql += ` ORDER BY d.date_incurred DESC, d.id DESC`;
 
-      let loans = query(sql, params).map(enrichLoan);
+      let loans = (await query(sql, params)).map(enrichLoan);
 
       if (status) {
         if (status === 'overdue') {
@@ -190,10 +190,10 @@ export function setupApiRoutes(router) {
   });
 
   // 3. GET /api/debts/:id
-  router.get('/api/debts/:id', (req, res) => {
+  router.get('/api/debts/:id', async (req, res) => {
     try {
       const debtId = Number(req.params.id);
-      const debt = queryOne(`
+      const debt = await queryOne(`
         SELECT d.*, 
                p.name as person_name, 
                p.nickname as person_nickname,
@@ -208,7 +208,7 @@ export function setupApiRoutes(router) {
 
       if (!debt) return res.status(404).json({ error: 'Loan record not found' });
 
-      const payments = query(`
+      const payments = await query(`
         SELECT * FROM payments WHERE debt_id = ? ORDER BY payment_date DESC, id DESC
       `, [debtId]);
 
@@ -222,9 +222,9 @@ export function setupApiRoutes(router) {
   });
 
   // 4. POST /api/debts (Record new pautang)
-  router.post('/api/debts', (req, res) => {
+  router.post('/api/debts', async (req, res) => {
     try {
-      if (replayOperation(req, res)) return;
+      if (await replayOperation(req, res)) return;
       const { 
         person_id, 
         person_name, 
@@ -248,7 +248,7 @@ export function setupApiRoutes(router) {
 
       // Auto-create borrower if new
       if (!targetPersonId && person_name) {
-        const pResult = run(`
+        const pResult = await run(`
           INSERT INTO people (name, nickname, relationship, phone, created_at)
           VALUES (?, ?, ?, ?, ?)
         `, [
@@ -268,7 +268,7 @@ export function setupApiRoutes(router) {
       const finalDateIncurred = date_incurred || now.split('T')[0];
       const loanReason = typeof reason === 'string' ? reason.trim() : '';
 
-      const result = run(`
+      const result = await run(`
         INSERT INTO debts (person_id, type, amount, reason, date_incurred, due_date, notes, status, created_at, updated_at)
         VALUES (?, 'lent', ?, ?, ?, ?, ?, 'active', ?, ?)
       `, [
@@ -282,9 +282,9 @@ export function setupApiRoutes(router) {
         now
       ]);
 
-      const created = queryOne(`SELECT * FROM debts WHERE id = ?`, [result.lastInsertRowid]);
+      const created = await queryOne(`SELECT * FROM debts WHERE id = ?`, [result.lastInsertRowid]);
       const responseBody = enrichLoan(created);
-      rememberOperation(req, 201, responseBody);
+      await rememberOperation(req, 201, responseBody);
       res.status(201).json(responseBody);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -292,16 +292,16 @@ export function setupApiRoutes(router) {
   });
 
   // 5. PUT /api/debts/:id
-  router.put('/api/debts/:id', (req, res) => {
+  router.put('/api/debts/:id', async (req, res) => {
     try {
       const debtId = Number(req.params.id);
       const { amount, reason, date_incurred, due_date, notes, status } = req.body;
 
-      const existing = queryOne(`SELECT * FROM debts WHERE id = ?`, [debtId]);
+      const existing = await queryOne(`SELECT * FROM debts WHERE id = ?`, [debtId]);
       if (!existing) return res.status(404).json({ error: 'Loan not found' });
 
       const now = new Date().toISOString();
-      run(`
+      await run(`
         UPDATE debts
         SET amount = ?, reason = ?, date_incurred = ?, due_date = ?, notes = ?, status = ?, type = 'lent', updated_at = ?
         WHERE id = ?
@@ -316,7 +316,7 @@ export function setupApiRoutes(router) {
         debtId
       ]);
 
-      const updated = queryOne(`SELECT * FROM debts WHERE id = ?`, [debtId]);
+      const updated = await queryOne(`SELECT * FROM debts WHERE id = ?`, [debtId]);
       res.json(enrichLoan(updated));
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -324,11 +324,11 @@ export function setupApiRoutes(router) {
   });
 
   // 6. DELETE /api/debts/:id
-  router.delete('/api/debts/:id', (req, res) => {
+  router.delete('/api/debts/:id', async (req, res) => {
     try {
       const debtId = Number(req.params.id);
-      run(`DELETE FROM payments WHERE debt_id = ?`, [debtId]);
-      run(`DELETE FROM debts WHERE id = ?`, [debtId]);
+      await run(`DELETE FROM payments WHERE debt_id = ?`, [debtId]);
+      await run(`DELETE FROM debts WHERE id = ?`, [debtId]);
       res.json({ success: true, message: 'Loan record deleted successfully' });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -336,7 +336,7 @@ export function setupApiRoutes(router) {
   });
 
   // 7. GET /api/payments
-  router.get('/api/payments', (req, res) => {
+  router.get('/api/payments', async (req, res) => {
     try {
       const { debt_id, limit } = req.query;
       let sql = `
@@ -363,7 +363,7 @@ export function setupApiRoutes(router) {
         params.push(Number(limit));
       }
 
-      const payments = query(sql, params);
+      const payments = await query(sql, params);
       res.json(payments);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -371,16 +371,16 @@ export function setupApiRoutes(router) {
   });
 
   // 8. POST /api/payments (Record payment / collection)
-  router.post('/api/payments', (req, res) => {
+  router.post('/api/payments', async (req, res) => {
     try {
-      if (replayOperation(req, res)) return;
+      if (await replayOperation(req, res)) return;
       const { debt_id, amount, allocations, payment_date, payment_method, reference_no, notes, client_created_at } = req.body;
       if (!debt_id) return res.status(400).json({ error: 'Loan ID is required' });
       if (!amount || isNaN(amount) || Number(amount) <= 0) {
         return res.status(400).json({ error: 'Valid payment amount is required' });
       }
 
-      const debt = queryOne(`SELECT * FROM debts WHERE id = ?`, [Number(debt_id)]);
+      const debt = await queryOne(`SELECT * FROM debts WHERE id = ?`, [Number(debt_id)]);
       if (!debt) return res.status(404).json({ error: 'Loan record not found' });
 
       const now = new Date().toISOString();
@@ -411,8 +411,8 @@ export function setupApiRoutes(router) {
           return res.status(400).json({ error: 'Payment allocations must add up to the payment amount.' });
         }
 
-        const allocationDebts = normalizedAllocations.map((allocation) => {
-          const loan = queryOne(`
+        const allocationDebts = await Promise.all(normalizedAllocations.map(async (allocation) => {
+          const loan = await queryOne(`
             SELECT d.*,
                    COALESCE((SELECT SUM(amount) FROM payments WHERE debt_id = d.id), 0) as total_paid
             FROM debts d
@@ -422,7 +422,7 @@ export function setupApiRoutes(router) {
             return { ...allocation, loan: null };
           }
           return { ...allocation, loan };
-        });
+        }));
 
         if (allocationDebts.some((allocation) => !allocation.loan)) {
           return res.status(400).json({ error: 'All repayment allocations must belong to the same borrower.' });
@@ -436,7 +436,7 @@ export function setupApiRoutes(router) {
 
         const createdPayments = [];
         for (const allocation of allocationDebts) {
-          const result = run(`
+          const result = await run(`
             INSERT INTO payments (debt_id, amount, payment_date, payment_method, reference_no, notes, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
           `, [
@@ -448,29 +448,29 @@ export function setupApiRoutes(router) {
             notes ? notes.trim() : null,
             createdAt
           ]);
-          createdPayments.push(queryOne(`SELECT * FROM payments WHERE id = ?`, [result.lastInsertRowid]));
+          createdPayments.push(await queryOne(`SELECT * FROM payments WHERE id = ?`, [result.lastInsertRowid]));
         }
 
         for (const { debtId } of allocationDebts) {
-          const totalPaidRow = queryOne(
+          const totalPaidRow = await queryOne(
             `SELECT SUM(amount) as total FROM payments WHERE debt_id = ?`,
             [debtId]
           );
           const totalPaid = Number(totalPaidRow?.total || 0);
           const loan = allocationDebts.find((allocation) => allocation.debtId === debtId).loan;
           if (totalPaid >= Number(loan.amount) && loan.status !== 'forgiven') {
-            run(`UPDATE debts SET status = 'paid', updated_at = ? WHERE id = ?`, [now, debtId]);
+            await run(`UPDATE debts SET status = 'paid', updated_at = ? WHERE id = ?`, [now, debtId]);
           } else if (totalPaid < Number(loan.amount) && loan.status === 'paid') {
-            run(`UPDATE debts SET status = 'active', updated_at = ? WHERE id = ?`, [now, debtId]);
+            await run(`UPDATE debts SET status = 'active', updated_at = ? WHERE id = ?`, [now, debtId]);
           }
         }
 
-        const updatedDebts = allocationDebts.map(({ debtId }) => enrichLoan(queryOne(`
+        const updatedDebts = await Promise.all(allocationDebts.map(async ({ debtId }) => enrichLoan(await queryOne(`
           SELECT d.*,
                  COALESCE((SELECT SUM(amount) FROM payments WHERE debt_id = d.id), 0) as total_paid
           FROM debts d WHERE d.id = ?
-        `, [debtId])));
-        const personDebts = query(`
+        `, [debtId]))));
+        const personDebts = await query(`
           SELECT d.amount, d.status,
                  COALESCE((SELECT SUM(amount) FROM payments WHERE debt_id = d.id), 0) as total_paid
           FROM debts d
@@ -485,11 +485,11 @@ export function setupApiRoutes(router) {
           debts: updatedDebts,
           is_settled: remainingBalance <= 0
         };
-        rememberOperation(req, 201, responseBody);
+        await rememberOperation(req, 201, responseBody);
         return res.status(201).json(responseBody);
       }
 
-      const pResult = run(`
+      const pResult = await run(`
         INSERT INTO payments (debt_id, amount, payment_date, payment_method, reference_no, notes, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `, [
@@ -502,18 +502,18 @@ export function setupApiRoutes(router) {
         createdAt
       ]);
 
-      const totalPaidRow = queryOne(`SELECT SUM(amount) as total FROM payments WHERE debt_id = ?`, [Number(debt_id)]);
+      const totalPaidRow = await queryOne(`SELECT SUM(amount) as total FROM payments WHERE debt_id = ?`, [Number(debt_id)]);
       const newTotalPaid = Number(totalPaidRow?.total || 0);
 
       // If fully paid, mark status as paid
       if (newTotalPaid >= debt.amount && debt.status !== 'forgiven') {
-        run(`UPDATE debts SET status = 'paid', updated_at = ? WHERE id = ?`, [now, Number(debt_id)]);
+        await run(`UPDATE debts SET status = 'paid', updated_at = ? WHERE id = ?`, [now, Number(debt_id)]);
       } else if (newTotalPaid < debt.amount && debt.status === 'paid') {
-        run(`UPDATE debts SET status = 'active', updated_at = ? WHERE id = ?`, [now, Number(debt_id)]);
+        await run(`UPDATE debts SET status = 'active', updated_at = ? WHERE id = ?`, [now, Number(debt_id)]);
       }
 
-      const payment = queryOne(`SELECT * FROM payments WHERE id = ?`, [pResult.lastInsertRowid]);
-      const updatedDebt = enrichLoan(queryOne(`
+      const payment = await queryOne(`SELECT * FROM payments WHERE id = ?`, [pResult.lastInsertRowid]);
+      const updatedDebt = enrichLoan(await queryOne(`
         SELECT d.*, 
                COALESCE((SELECT SUM(amount) FROM payments WHERE debt_id = d.id), 0) as total_paid
         FROM debts d WHERE d.id = ?
@@ -524,7 +524,7 @@ export function setupApiRoutes(router) {
         debt: updatedDebt,
         is_settled: updatedDebt.balance <= 0
       };
-      rememberOperation(req, 201, responseBody);
+      await rememberOperation(req, 201, responseBody);
       res.status(201).json(responseBody);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -532,7 +532,7 @@ export function setupApiRoutes(router) {
   });
 
   // 9. PUT /api/payments/:id
-  router.put('/api/payments/:id', (req, res) => {
+  router.put('/api/payments/:id', async (req, res) => {
     try {
       const paymentId = Number(req.params.id);
       const amount = Number(req.body.amount);
@@ -540,48 +540,48 @@ export function setupApiRoutes(router) {
         return res.status(400).json({ error: 'Valid payment amount is required' });
       }
 
-      const payment = queryOne(`SELECT * FROM payments WHERE id = ?`, [paymentId]);
+      const payment = await queryOne(`SELECT * FROM payments WHERE id = ?`, [paymentId]);
       if (!payment) return res.status(404).json({ error: 'Payment not found' });
 
-      run(`UPDATE payments SET amount = ? WHERE id = ?`, [amount, paymentId]);
+      await run(`UPDATE payments SET amount = ? WHERE id = ?`, [amount, paymentId]);
 
-      const debt = queryOne(`SELECT * FROM debts WHERE id = ?`, [payment.debt_id]);
+      const debt = await queryOne(`SELECT * FROM debts WHERE id = ?`, [payment.debt_id]);
       if (debt && debt.status !== 'forgiven') {
-        const totalPaidRow = queryOne(`SELECT SUM(amount) as total FROM payments WHERE debt_id = ?`, [payment.debt_id]);
+        const totalPaidRow = await queryOne(`SELECT SUM(amount) as total FROM payments WHERE debt_id = ?`, [payment.debt_id]);
         const newTotalPaid = Number(totalPaidRow?.total || 0);
         const now = new Date().toISOString();
         if (newTotalPaid >= debt.amount) {
-          run(`UPDATE debts SET status = 'paid', updated_at = ? WHERE id = ?`, [now, payment.debt_id]);
+          await run(`UPDATE debts SET status = 'paid', updated_at = ? WHERE id = ?`, [now, payment.debt_id]);
         } else if (debt.status === 'paid') {
-          run(`UPDATE debts SET status = 'active', updated_at = ? WHERE id = ?`, [now, payment.debt_id]);
+          await run(`UPDATE debts SET status = 'active', updated_at = ? WHERE id = ?`, [now, payment.debt_id]);
         }
       }
 
-      res.json(queryOne(`SELECT * FROM payments WHERE id = ?`, [paymentId]));
+      res.json(await queryOne(`SELECT * FROM payments WHERE id = ?`, [paymentId]));
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
   });
 
   // 10. DELETE /api/payments/:id
-  router.delete('/api/payments/:id', (req, res) => {
+  router.delete('/api/payments/:id', async (req, res) => {
     try {
       const paymentId = Number(req.params.id);
-      const payment = queryOne(`SELECT * FROM payments WHERE id = ?`, [paymentId]);
+      const payment = await queryOne(`SELECT * FROM payments WHERE id = ?`, [paymentId]);
       if (!payment) return res.status(404).json({ error: 'Payment not found' });
 
-      run(`DELETE FROM payments WHERE id = ?`, [paymentId]);
+      await run(`DELETE FROM payments WHERE id = ?`, [paymentId]);
 
       const debtId = payment.debt_id;
-      const debt = queryOne(`SELECT * FROM debts WHERE id = ?`, [debtId]);
+      const debt = await queryOne(`SELECT * FROM debts WHERE id = ?`, [debtId]);
       if (debt) {
-        const totalPaidRow = queryOne(`SELECT SUM(amount) as total FROM payments WHERE debt_id = ?`, [debtId]);
+        const totalPaidRow = await queryOne(`SELECT SUM(amount) as total FROM payments WHERE debt_id = ?`, [debtId]);
         const newTotalPaid = Number(totalPaidRow?.total || 0);
         const now = new Date().toISOString();
         if (newTotalPaid >= debt.amount) {
-          run(`UPDATE debts SET status = 'paid', updated_at = ? WHERE id = ?`, [now, debtId]);
+          await run(`UPDATE debts SET status = 'paid', updated_at = ? WHERE id = ?`, [now, debtId]);
         } else if (debt.status === 'paid') {
-          run(`UPDATE debts SET status = 'active', updated_at = ? WHERE id = ?`, [now, debtId]);
+          await run(`UPDATE debts SET status = 'active', updated_at = ? WHERE id = ?`, [now, debtId]);
         }
       }
 
@@ -592,15 +592,15 @@ export function setupApiRoutes(router) {
   });
 
   // 10. GET /api/people (Borrowers directory)
-  router.get('/api/people', (req, res) => {
+  router.get('/api/people', async (req, res) => {
     try {
-      const people = query(`SELECT * FROM people ORDER BY name ASC`);
-      const debts = query(`
+      const people = await query(`SELECT * FROM people ORDER BY name ASC`);
+      const debts = (await query(`
         SELECT d.*, 
                COALESCE((SELECT SUM(amount) FROM payments WHERE debt_id = d.id), 0) as total_paid
         FROM debts d
         WHERE d.type = 'lent' OR d.type IS NULL
-      `).map(enrichLoan);
+      `)).map(enrichLoan);
 
       const result = people.map(p => {
         const personDebts = debts.filter(d => d.person_id === p.id);
@@ -635,21 +635,21 @@ export function setupApiRoutes(router) {
   });
 
   // 11. GET /api/people/:id
-  router.get('/api/people/:id', (req, res) => {
+  router.get('/api/people/:id', async (req, res) => {
     try {
       const personId = Number(req.params.id);
-      const person = queryOne(`SELECT * FROM people WHERE id = ?`, [personId]);
+      const person = await queryOne(`SELECT * FROM people WHERE id = ?`, [personId]);
       if (!person) return res.status(404).json({ error: 'Borrower not found' });
 
-      const debts = query(`
+      const debts = (await query(`
         SELECT d.*, 
                COALESCE((SELECT SUM(amount) FROM payments WHERE debt_id = d.id), 0) as total_paid
         FROM debts d
         WHERE d.person_id = ? AND (d.type = 'lent' OR d.type IS NULL)
         ORDER BY d.date_incurred DESC, d.id DESC
-      `, [personId]).map(enrichLoan);
+      `, [personId])).map(enrichLoan);
 
-      const payments = query(`
+      const payments = await query(`
         SELECT p.*, d.reason as debt_reason
         FROM payments p
         JOIN debts d ON p.debt_id = d.id
@@ -683,16 +683,16 @@ export function setupApiRoutes(router) {
   });
 
   // 12. POST /api/people (Add borrower)
-  router.post('/api/people', (req, res) => {
+  router.post('/api/people', async (req, res) => {
     try {
-      if (replayOperation(req, res)) return;
+      if (await replayOperation(req, res)) return;
       const { name, nickname, relationship, phone, facebook, notes, client_created_at } = req.body;
       if (!name || !name.trim()) {
         return res.status(400).json({ error: 'Borrower name is required' });
       }
 
       const now = getClientCreatedAt(client_created_at);
-      const result = run(`
+      const result = await run(`
         INSERT INTO people (name, nickname, relationship, phone, facebook, notes, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `, [
@@ -705,8 +705,8 @@ export function setupApiRoutes(router) {
         now
       ]);
 
-      const created = queryOne(`SELECT * FROM people WHERE id = ?`, [result.lastInsertRowid]);
-      rememberOperation(req, 201, created);
+      const created = await queryOne(`SELECT * FROM people WHERE id = ?`, [result.lastInsertRowid]);
+      await rememberOperation(req, 201, created);
       res.status(201).json(created);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -714,14 +714,14 @@ export function setupApiRoutes(router) {
   });
 
   // 13. PUT /api/people/:id
-  router.put('/api/people/:id', (req, res) => {
+  router.put('/api/people/:id', async (req, res) => {
     try {
       const personId = Number(req.params.id);
       const { name, nickname, relationship, phone, facebook, notes } = req.body;
-      const existing = queryOne(`SELECT * FROM people WHERE id = ?`, [personId]);
+      const existing = await queryOne(`SELECT * FROM people WHERE id = ?`, [personId]);
       if (!existing) return res.status(404).json({ error: 'Borrower not found' });
 
-      run(`
+      await run(`
         UPDATE people
         SET name = ?, nickname = ?, relationship = ?, phone = ?, facebook = ?, notes = ?
         WHERE id = ?
@@ -735,7 +735,7 @@ export function setupApiRoutes(router) {
         personId
       ]);
 
-      const updated = queryOne(`SELECT * FROM people WHERE id = ?`, [personId]);
+      const updated = await queryOne(`SELECT * FROM people WHERE id = ?`, [personId]);
       res.json(updated);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -743,15 +743,15 @@ export function setupApiRoutes(router) {
   });
 
   // 14. DELETE /api/people/:id
-  router.delete('/api/people/:id', (req, res) => {
+  router.delete('/api/people/:id', async (req, res) => {
     try {
       const personId = Number(req.params.id);
-      const debts = query(`SELECT id FROM debts WHERE person_id = ?`, [personId]);
+      const debts = await query(`SELECT id FROM debts WHERE person_id = ?`, [personId]);
       for (const d of debts) {
-        run(`DELETE FROM payments WHERE debt_id = ?`, [d.id]);
+        await run(`DELETE FROM payments WHERE debt_id = ?`, [d.id]);
       }
-      run(`DELETE FROM debts WHERE person_id = ?`, [personId]);
-      run(`DELETE FROM people WHERE id = ?`, [personId]);
+      await run(`DELETE FROM debts WHERE person_id = ?`, [personId]);
+      await run(`DELETE FROM people WHERE id = ?`, [personId]);
 
       res.json({ success: true, message: 'Borrower and associated loans deleted successfully' });
     } catch (err) {
@@ -760,12 +760,12 @@ export function setupApiRoutes(router) {
   });
 
   // 15. POST /api/demo/seed (English pautang sample data)
-  router.post('/api/demo/seed', (req, res) => {
+  router.post('/api/demo/seed', async (req, res) => {
     try {
       // Clear existing records first
-      run(`DELETE FROM payments`);
-      run(`DELETE FROM debts`);
-      run(`DELETE FROM people`);
+      await run(`DELETE FROM payments`);
+      await run(`DELETE FROM debts`);
+      await run(`DELETE FROM people`);
 
       const now = new Date();
       const today = getPhilippineDateString(now);
@@ -773,52 +773,52 @@ export function setupApiRoutes(router) {
       const daysAhead = (days) => addDaysToDateString(today, days);
 
       // 1. Kuya Jun (Brother - Family)
-      const p1 = run(`INSERT INTO people (name, nickname, relationship, phone, notes, created_at)
-        VALUES ('Juan Santos Jr.', 'Kuya Jun', 'Family', '0917-123-4567', 'Older brother in Bulacan', ?)`, [now.toISOString()]).lastInsertRowid;
+      const p1 = (await run(`INSERT INTO people (name, nickname, relationship, phone, notes, created_at)
+        VALUES ('Juan Santos Jr.', 'Kuya Jun', 'Family', '0917-123-4567', 'Older brother in Bulacan', ?)`, [now.toISOString()])).lastInsertRowid;
       
-      const d1 = run(`INSERT INTO debts (person_id, type, amount, reason, date_incurred, due_date, notes, status, created_at, updated_at)
+      const d1 = (await run(`INSERT INTO debts (person_id, type, amount, reason, date_incurred, due_date, notes, status, created_at, updated_at)
         VALUES (?, 'lent', 5000, 'Motorcycle Emergency Repair', ?, ?, 'Agreed to pay by end of the month', 'active', ?, ?)`,
-        [p1, daysAgo(20), daysAhead(5), now.toISOString(), now.toISOString()]).lastInsertRowid;
+        [p1, daysAgo(20), daysAhead(5), now.toISOString(), now.toISOString()])).lastInsertRowid;
       
-      run(`INSERT INTO payments (debt_id, amount, payment_date, payment_method, reference_no, notes, created_at)
+      await run(`INSERT INTO payments (debt_id, amount, payment_date, payment_method, reference_no, notes, created_at)
         VALUES (?, 2000, ?, 'GCash', 'GC-88392019', '1st installment payment', ?)`, [d1, daysAgo(5), now.toISOString()]);
 
       // 2. Maria Concepcion (Cousin - Overdue)
-      const p2 = run(`INSERT INTO people (name, nickname, relationship, phone, notes, created_at)
-        VALUES ('Maria Concepcion', 'Ate Maria', 'Family', '0928-555-0192', 'Cousin running small snack business', ?)`, [now.toISOString()]).lastInsertRowid;
+      const p2 = (await run(`INSERT INTO people (name, nickname, relationship, phone, notes, created_at)
+        VALUES ('Maria Concepcion', 'Ate Maria', 'Family', '0928-555-0192', 'Cousin running small snack business', ?)`, [now.toISOString()])).lastInsertRowid;
       
-      run(`INSERT INTO debts (person_id, type, amount, reason, date_incurred, due_date, notes, status, created_at, updated_at)
+      await run(`INSERT INTO debts (person_id, type, amount, reason, date_incurred, due_date, notes, status, created_at, updated_at)
         VALUES (?, 'lent', 3500, 'School Tuition Fee Support', ?, ?, 'Promised to settle on the 15th', 'active', ?, ?)`,
         [p2, daysAgo(25), daysAgo(4), now.toISOString(), now.toISOString()]); // OVERDUE
 
       // 3. Mark Angelo Reyes (College Friend - Paid in full)
-      const p3 = run(`INSERT INTO people (name, nickname, relationship, phone, notes, created_at)
-        VALUES ('Mark Angelo Reyes', 'Mark', 'Friend', '0919-444-2281', 'Close college friend', ?)`, [now.toISOString()]).lastInsertRowid;
+      const p3 = (await run(`INSERT INTO people (name, nickname, relationship, phone, notes, created_at)
+        VALUES ('Mark Angelo Reyes', 'Mark', 'Friend', '0919-444-2281', 'Close college friend', ?)`, [now.toISOString()])).lastInsertRowid;
       
-      const d3 = run(`INSERT INTO debts (person_id, type, amount, reason, date_incurred, due_date, notes, status, created_at, updated_at)
+      const d3 = (await run(`INSERT INTO debts (person_id, type, amount, reason, date_incurred, due_date, notes, status, created_at, updated_at)
         VALUES (?, 'lent', 1500, 'Dinner & Reunion Shared Bill', ?, ?, 'Paid promptly via Maya', 'paid', ?, ?)`,
-        [p3, daysAgo(30), daysAgo(10), now.toISOString(), now.toISOString()]).lastInsertRowid;
+        [p3, daysAgo(30), daysAgo(10), now.toISOString(), now.toISOString()])).lastInsertRowid;
       
-      run(`INSERT INTO payments (debt_id, amount, payment_date, payment_method, reference_no, notes, created_at)
+      await run(`INSERT INTO payments (debt_id, amount, payment_date, payment_method, reference_no, notes, created_at)
         VALUES (?, 1500, ?, 'Maya', 'MY-991283', 'Settled in full via Maya transfer', ?)`, [d3, daysAgo(10), now.toISOString()]);
 
       // 4. Sarah Mae Dizon (Office Colleague - Active)
-      const p4 = run(`INSERT INTO people (name, nickname, relationship, phone, notes, created_at)
-        VALUES ('Sarah Mae Dizon', 'Sarah', 'Colleague', '0918-333-8822', 'Colleague in Finance Dept', ?)`, [now.toISOString()]).lastInsertRowid;
+      const p4 = (await run(`INSERT INTO people (name, nickname, relationship, phone, notes, created_at)
+        VALUES ('Sarah Mae Dizon', 'Sarah', 'Colleague', '0918-333-8822', 'Colleague in Finance Dept', ?)`, [now.toISOString()])).lastInsertRowid;
       
-      run(`INSERT INTO debts (person_id, type, amount, reason, date_incurred, due_date, notes, status, created_at, updated_at)
+      await run(`INSERT INTO debts (person_id, type, amount, reason, date_incurred, due_date, notes, status, created_at, updated_at)
         VALUES (?, 'lent', 1200, 'Office Group Lunch & Taxi Share', ?, ?, 'To settle on upcoming payday', 'active', ?, ?)`,
         [p4, daysAgo(3), daysAhead(3), now.toISOString(), now.toISOString()]);
 
       // 5. Roberto Cruz (Neighbor)
-      const p5 = run(`INSERT INTO people (name, nickname, relationship, phone, notes, created_at)
-        VALUES ('Roberto Cruz', 'Mang Berting', 'Neighbor', '0915-777-3312', 'Neighbor next door', ?)`, [now.toISOString()]).lastInsertRowid;
+      const p5 = (await run(`INSERT INTO people (name, nickname, relationship, phone, notes, created_at)
+        VALUES ('Roberto Cruz', 'Mang Berting', 'Neighbor', '0915-777-3312', 'Neighbor next door', ?)`, [now.toISOString()])).lastInsertRowid;
       
-      const d5 = run(`INSERT INTO debts (person_id, type, amount, reason, date_incurred, due_date, notes, status, created_at, updated_at)
+      const d5 = (await run(`INSERT INTO debts (person_id, type, amount, reason, date_incurred, due_date, notes, status, created_at, updated_at)
         VALUES (?, 'lent', 2500, 'Emergency Electric Utility Bill', ?, ?, 'Two bi-weekly installments agreed', 'active', ?, ?)`,
-        [p5, daysAgo(15), daysAhead(10), now.toISOString(), now.toISOString()]).lastInsertRowid;
+        [p5, daysAgo(15), daysAhead(10), now.toISOString(), now.toISOString()])).lastInsertRowid;
       
-      run(`INSERT INTO payments (debt_id, amount, payment_date, payment_method, reference_no, notes, created_at)
+      await run(`INSERT INTO payments (debt_id, amount, payment_date, payment_method, reference_no, notes, created_at)
         VALUES (?, 1000, ?, 'Cash', null, 'Handed cash at the house', ?)`, [d5, daysAgo(2), now.toISOString()]);
 
       res.json({ success: true, message: 'Sample pautang records successfully loaded!' });
@@ -828,11 +828,11 @@ export function setupApiRoutes(router) {
   });
 
   // 16. POST /api/reset (Clear all data)
-  router.post('/api/reset', (req, res) => {
+  router.post('/api/reset', async (req, res) => {
     try {
-      run(`DELETE FROM payments`);
-      run(`DELETE FROM debts`);
-      run(`DELETE FROM people`);
+      await run(`DELETE FROM payments`);
+      await run(`DELETE FROM debts`);
+      await run(`DELETE FROM people`);
       res.json({ success: true, message: 'All loan records and borrowers have been cleared.' });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -840,9 +840,9 @@ export function setupApiRoutes(router) {
   });
 
   // 17. GET /api/export/csv
-  router.get('/api/export/csv', (req, res) => {
+  router.get('/api/export/csv', async (req, res) => {
     try {
-      const debts = query(`
+      const debts = (await query(`
         SELECT d.id, d.amount, d.reason, d.date_incurred, d.due_date, d.status,
                p.name as person_name, p.nickname as person_nickname, p.relationship, p.phone,
                COALESCE((SELECT SUM(amount) FROM payments WHERE debt_id = d.id), 0) as total_paid
@@ -850,7 +850,7 @@ export function setupApiRoutes(router) {
         JOIN people p ON d.person_id = p.id
         WHERE d.type = 'lent' OR d.type IS NULL
         ORDER BY d.date_incurred DESC
-      `).map(enrichLoan);
+      `)).map(enrichLoan);
 
       const header = ['Loan ID', 'Borrower Name', 'Nickname', 'Relationship', 'Phone', 'Original Amount', 'Total Paid', 'Remaining Balance', 'Purpose', 'Date Lent', 'Due Date', 'Status', 'Overdue'];
       const rows = debts.map(d => [
