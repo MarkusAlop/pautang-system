@@ -30,11 +30,11 @@
 <main class="auth-page">
   <section class="auth-card" aria-labelledby="auth-title">
     <div class="auth-brand-mark"><Wallet size={23} /></div>
-    <p class="auth-eyebrow">YOUR PRIVATE LEDGER</p>
+    <p class="auth-eyebrow">YOUR DEVICE-ONLY LEDGER</p>
     <h1 id="auth-title">{mode === 'signup' ? 'Create your account' : 'Welcome back'}</h1>
     <p class="auth-description">
       {#if mode === 'signup'}
-        Set up your sign-in to keep your lending records together and protected.
+        Create a profile to keep this browser’s lending records organized.
       {:else}
         Sign in to open your PautangTrack ledger.
       {/if}
@@ -64,7 +64,7 @@
         required
       />
       {#if mode === 'signup'}
-        <p class="auth-field-hint">Use at least 8 characters. Sign-in and account creation require an internet connection.</p>
+        <p class="auth-field-hint">Use at least 8 characters. Creating profiles and signing in require an internet connection.</p>
       {/if}
 
       {#if error}
@@ -89,7 +89,7 @@
 
     <div class="auth-privacy-note">
       <LockKeyhole size={15} />
-      <span>Each account has a private ledger. Sign in online; records can be queued on this device for later sync.</span>
+      <span>Profiles and records stay in this browser only. They are not encrypted or synced, and clearing browser data can erase them.</span>
     </div>
   </section>
 </main>

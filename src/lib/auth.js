@@ -1,14 +1,59 @@
 const TOKEN_KEY = 'pautangtrack:auth-token';
 const USER_KEY = 'pautangtrack:auth-user';
-const LEGACY_CREDENTIAL_KEY = 'pautangtrack:offline-credential';
+const ACCOUNTS_KEY = 'pautangtrack:local-accounts';
+const PBKDF2_ITERATIONS = 120000;
 
 function browserIsOnline() {
   return typeof navigator === 'undefined' || navigator.onLine;
 }
 
-function storeSession(result) {
-  localStorage.setItem(TOKEN_KEY, result.token);
-  localStorage.setItem(USER_KEY, JSON.stringify(result.user));
+function readAccounts() {
+  const value = localStorage.getItem(ACCOUNTS_KEY);
+  if (value) return JSON.parse(value);
+  const legacyValue = localStorage.getItem('pautangtrack:offline-credential');
+  if (!legacyValue) return [];
+
+  const legacyCredential = JSON.parse(legacyValue);
+  const accounts = [{
+    email: legacyCredential.email,
+    salt: legacyCredential.salt,
+    verifier: legacyCredential.verifier
+  }];
+  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+  localStorage.removeItem('pautangtrack:offline-credential');
+  return accounts;
+}
+
+function encodeBase64(bytes) {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes)));
+}
+
+function decodeBase64(value) {
+  return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+}
+
+async function deriveVerifier(password, salt) {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error('Local sign-in is unavailable in this browser. Use HTTPS or localhost.');
+  }
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  return crypto.subtle.deriveBits({
+    name: 'PBKDF2',
+    hash: 'SHA-256',
+    salt,
+    iterations: PBKDF2_ITERATIONS
+  }, key, 256);
+}
+
+function storeSession(user) {
+  localStorage.setItem(TOKEN_KEY, crypto.randomUUID());
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
 function cachedUser() {
@@ -23,117 +68,64 @@ export function getCurrentUser() {
 function clearSession() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
-  localStorage.removeItem(LEGACY_CREDENTIAL_KEY);
+  localStorage.removeItem('pautangtrack:offline-credential');
 }
 
-async function readJsonResponse(response) {
-  const body = await response.text();
-  let result;
-  try {
-    result = body ? JSON.parse(body) : null;
-  } catch {
-    throw new Error(`The server returned an invalid response (${response.status}). Restart the app and try again.`);
-  }
-  if (!result) {
-    throw new Error(`The server returned an empty response (${response.status}). Restart the app and try again.`);
-  }
-  if (!response.ok) throw new Error(result.error || 'Authentication failed.');
-  return result;
-}
-
-async function postCredentials(endpoint, email, password) {
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
-  });
-  return readJsonResponse(response);
-}
-
-export function getAccessToken() {
+function hasLocalSession() {
   return localStorage.getItem(TOKEN_KEY);
 }
 
-export function hasServerSession() {
-  return Boolean(getAccessToken());
-}
-
-export function getAuthHeaders() {
-  const token = getAccessToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 export async function restoreAuthState() {
-  const token = getAccessToken();
-  const savedUser = cachedUser();
-
-  if (token && browserIsOnline()) {
-    try {
-      const response = await fetch('/api/auth/session', { headers: getAuthHeaders() });
-      if (response.ok) {
-        const result = await readJsonResponse(response);
-        localStorage.setItem(USER_KEY, JSON.stringify(result.user));
-        return { session: { user: result.user }, configured: true };
-      }
-      if (response.status !== 401) {
-        throw new Error('Could not verify your account session.');
-      }
-      clearSession();
-    } catch (error) {
-      if (error instanceof TypeError && savedUser) {
-        return { session: { user: savedUser }, configured: true };
-      }
-      throw error;
-    }
-  } else if (token && savedUser && !browserIsOnline()) {
-    return { session: { user: savedUser }, configured: true };
+  const session = cachedUser();
+  if (hasLocalSession() && session) {
+    return { session: { user: session }, configured: readAccounts().length > 0 };
   }
 
-  if (browserIsOnline()) {
-    const response = await fetch('/api/auth/status');
-    const result = await readJsonResponse(response);
-    return { session: null, configured: result.configured };
-  }
-
-  return { session: null, configured: false };
+  clearSession();
+  return { session: null, configured: readAccounts().length > 0 };
 }
 
 export async function authenticate(mode, emailInput, password) {
-  const email = emailInput.trim().toLowerCase();
   if (!browserIsOnline()) {
     throw new Error('Sign-in and account creation require an internet connection.');
   }
 
-  const result = await postCredentials(
-    mode === 'signup' ? '/api/auth/signup' : '/api/auth/login',
-    email,
-    password
-  );
-  storeSession(result);
-  return { user: result.user };
+  const email = emailInput.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+    throw new Error('Enter a valid email address.');
+  }
+  const accounts = readAccounts();
+  const existing = accounts.find((account) => account.email === email);
+
+  if (mode === 'signup') {
+    if (existing) throw new Error('An account with this email already exists on this device. Please sign in.');
+    if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
+      throw new Error('Password must be between 8 and 128 characters.');
+    }
+
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const verifier = await deriveVerifier(password, salt);
+    accounts.push({
+      email,
+      salt: encodeBase64(salt),
+      verifier: encodeBase64(verifier)
+    });
+    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+  } else {
+    if (!existing) throw new Error('Email or password is incorrect.');
+    const verifier = await deriveVerifier(password, decodeBase64(existing.salt));
+    const candidate = new Uint8Array(verifier);
+    const saved = decodeBase64(existing.verifier);
+    if (candidate.length !== saved.length || !candidate.every((value, index) => value === saved[index])) {
+      throw new Error('Email or password is incorrect.');
+    }
+  }
+
+  const user = { email };
+  storeSession(user);
+  return { user };
 }
 
 export async function signOut() {
-  const token = getAccessToken();
-  let logoutError;
-  if (token && browserIsOnline()) {
-    try {
-      const response = await fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: getAuthHeaders()
-      });
-      if (!response.ok) {
-        try {
-          const result = await readJsonResponse(response);
-          logoutError = new Error(result.error || 'Could not end the server session.');
-        } catch (error) {
-          logoutError = error;
-        }
-      }
-    } catch (error) {
-      logoutError = error;
-    }
-  }
   clearSession();
-  if (logoutError) throw logoutError;
 }

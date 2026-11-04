@@ -39,9 +39,6 @@
   let toast = null;
   let loading = true;
   let isOnline = typeof navigator === 'undefined' || navigator.onLine;
-  let pendingSyncCount = 0;
-  let syncingOfflineRecords = false;
-  let offlineSyncError = '';
   let installPrompt = null;
   let authReady = false;
   let authUser = null;
@@ -80,10 +77,10 @@
     }
   }
 
-  async function loadOfflineData() {
+  async function loadLocalData() {
     loading = true;
     try {
-      const snapshot = await api.getOfflineSnapshot();
+      const snapshot = await api.getLocalSnapshot();
       stats = snapshot.stats;
       debts = snapshot.debts;
       people = snapshot.people;
@@ -100,60 +97,15 @@
     await prompt.userChoice;
   }
 
-  async function syncOfflineRecords() {
-    if (!isOnline || !api.hasServerSession() || syncingOfflineRecords) return;
-    syncingOfflineRecords = true;
-    offlineSyncError = '';
-    try {
-      const queuedBeforeSync = await api.getPendingOperationCount();
-      if (!queuedBeforeSync) {
-        await refreshData();
-        return;
-      }
-
-      const result = await api.syncOfflineChanges();
-      pendingSyncCount = result.pending;
-      if (result.error) {
-        offlineSyncError = result.error;
-        await loadOfflineData();
-        return;
-      }
-
-      if (result.pending > 0) {
-        await loadOfflineData();
-      } else if (result.synced > 0) {
-        await refreshData();
-        if (isPersonDetailOpen && activePerson) {
-          const personId = result.idMappings?.people?.[String(activePerson.id)] || activePerson.id;
-          activePerson = await api.getPerson(personId);
-        }
-        if (isDebtDetailOpen && activeDebt) {
-          const debtId = result.idMappings?.debts?.[String(activeDebt.id)] || activeDebt.id;
-          activeDebt = await api.getDebt(debtId);
-        }
-        showToast(`${result.synced} offline record${result.synced === 1 ? '' : 's'} synced.`);
-      }
-    } catch (error) {
-      offlineSyncError = error.message || 'Could not sync offline records.';
-    } finally {
-      syncingOfflineRecords = false;
-    }
-  }
-
   async function handleAuthenticated(event) {
     authUser = event.detail.user;
     accountExists = true;
     authError = '';
     isOnline = navigator.onLine;
     try {
-      pendingSyncCount = await api.getPendingOperationCount();
-      if (isOnline && api.hasServerSession()) {
-        await syncOfflineRecords();
-      } else {
-        await loadOfflineData();
-      }
+      await loadLocalData();
     } catch (error) {
-      offlineSyncError = error.message || 'Could not load saved ledger data.';
+      authError = error.message || 'Could not load this device’s saved ledger data.';
     }
   }
 
@@ -161,7 +113,7 @@
     try {
       await signOut();
     } catch (error) {
-      authError = error.message || 'Could not end the server session.';
+      authError = error.message || 'Could not sign out.';
     }
     authUser = null;
     toast = null;
@@ -170,13 +122,9 @@
   onMount(() => {
     const handleOnline = () => {
       isOnline = true;
-      if (authUser) void syncOfflineRecords();
     };
     const handleOffline = () => {
       isOnline = false;
-    };
-    const handleQueuedRecords = (event) => {
-      pendingSyncCount = event.detail?.count || 0;
     };
     const handleInstallPrompt = (event) => {
       event.preventDefault();
@@ -188,7 +136,6 @@
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    window.addEventListener('pautang:offline-queue', handleQueuedRecords);
     window.addEventListener('beforeinstallprompt', handleInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
 
@@ -199,12 +146,7 @@
         authUser = state.session?.user || null;
         isOnline = navigator.onLine;
         if (authUser) {
-          pendingSyncCount = await api.getPendingOperationCount();
-          if (isOnline && api.hasServerSession()) {
-            await syncOfflineRecords();
-          } else {
-            await loadOfflineData();
-          }
+          await loadLocalData();
         }
       } catch (error) {
         authError = error.message || 'Could not check your account. Try signing in again.';
@@ -216,7 +158,6 @@
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('pautang:offline-queue', handleQueuedRecords);
       window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
@@ -385,7 +326,7 @@
 
 {#if !authReady}
   <main class="auth-page" aria-live="polite">
-    <div class="auth-loading">Loading your secure sign-in…</div>
+    <div class="auth-loading">Loading your device profile…</div>
   </main>
 {:else if !authUser}
   <AuthGate
@@ -416,31 +357,10 @@
     <button type="button" on:click={handleSignOut}>Sign out</button>
   </div>
 
-  {#if !isOnline || !api.hasServerSession() || pendingSyncCount > 0}
-    <div class={`px-4 py-2 text-xs ${isOnline ? 'bg-blue-50 text-blue-900 border-b border-blue-200' : 'bg-amber-50 text-amber-900 border-b border-amber-200'}`} role="status" aria-live="polite">
-      <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
-        <span>
-          {#if isOnline}
-            {#if syncingOfflineRecords}
-              Syncing offline records…
-            {:else if !api.hasServerSession()}
-              Local sign-in. {pendingSyncCount} offline record{pendingSyncCount === 1 ? '' : 's'} waiting; sign in online to sync.
-            {:else}
-              {pendingSyncCount} record{pendingSyncCount === 1 ? '' : 's'} waiting to sync.
-            {/if}
-          {:else}
-            Offline mode. This device shows saved data; new borrowers, loans, and payments will sync when you reconnect.
-          {/if}
-          {#if offlineSyncError}<span class="block text-red-700 mt-1">{offlineSyncError}</span>{/if}
-        </span>
-        {#if isOnline && api.hasServerSession() && pendingSyncCount > 0 && !syncingOfflineRecords}
-          <button type="button" on:click={syncOfflineRecords} class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold">
-            Sync now
-          </button>
-        {/if}
-      </div>
-    </div>
-  {/if}
+  <div class="px-4 py-2 text-xs bg-amber-50 text-amber-900 border-b border-amber-200" role="status">
+    Your ledger is saved only in this browser on this device. It does not sync to other devices.
+    {#if !isOnline} Profile sign-in requires an internet connection; your saved ledger remains available offline.{/if}
+  </div>
 
   <!-- Toast Notification -->
   {#if toast}
@@ -492,8 +412,8 @@
           </p>
         </div>
         <div class="ledger-status">
-          <span class:offline={!isOnline || !api.hasServerSession()} class="status-dot"></span>
-          {isOnline && api.hasServerSession() ? 'All changes up to date' : 'Offline · saved on this device'}
+          <span class="status-dot offline"></span>
+          Saved on this device
         </div>
       </section>
 
@@ -600,7 +520,7 @@
         <span class="text-[10px] text-slate-400">Created by Markus Alop · 2026 Pautang Track</span>
       </div>
       <div class="text-[11px] text-slate-400">
-        Saved to local SQLite database: <code class="font-mono bg-slate-100 px-1 py-0.5 rounded">data/utang.sqlite</code>
+        Stored in this browser only · Back up your ledger with CSV export
       </div>
     </div>
   </footer>

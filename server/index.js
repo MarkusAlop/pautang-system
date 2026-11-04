@@ -1,9 +1,6 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initDb } from './db.js';
-import { requireAuthentication, setupAuthRoutes } from './auth.js';
-import { setupApiRoutes } from './api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,12 +9,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
-
-// Setup API endpoints
-await initDb();
-setupAuthRoutes(app);
-app.use('/api', requireAuthentication);
-setupApiRoutes(app);
 
 // Serve frontend dist in production
 const distPath = path.join(__dirname, '..', 'dist');

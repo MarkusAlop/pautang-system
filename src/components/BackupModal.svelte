@@ -125,7 +125,7 @@
   
   <div>
     <h2 class="text-lg font-bold text-slate-900 tracking-tight">Data Management & Export</h2>
-    <p class="text-xs text-slate-500">Export your loan ledger to Excel/CSV or manage your local database.</p>
+    <p class="text-xs text-slate-500">Export your loan ledger to Excel/CSV or manage records saved in this browser.</p>
   </div>
 
   {#if message}
@@ -166,20 +166,20 @@
       </button>
     </div>
 
-    <!-- 2. SQLite Database Storage Info -->
+    <!-- 2. Browser Storage Info -->
     <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
       <div class="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-4">
         <Database class="w-5 h-5" />
       </div>
-      <h3 class="text-sm font-bold text-slate-900 mb-1">Local SQLite Database</h3>
+      <h3 class="text-sm font-bold text-slate-900 mb-1">Browser-only Storage</h3>
       <p class="text-xs text-slate-500 mb-3">
-        All records and payments are stored in a persistent SQLite database file located at:
+        Profiles and records are saved in this browser on this device. They do not sync to other devices or a cloud account.
       </p>
       <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 font-mono text-[11px] text-slate-700 select-all">
-        data/utang.sqlite
+        IndexedDB · PautangTrack
       </div>
       <p class="text-[11px] text-slate-400 mt-2">
-        You can copy or back up this file anytime or inspect it using DB Browser for SQLite.
+        Download CSV backups regularly. Clearing this site’s browser data can permanently erase your ledger.
       </p>
     </div>
 
